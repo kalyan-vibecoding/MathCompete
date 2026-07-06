@@ -1,18 +1,23 @@
 import './globals.css'
+import Script from 'next/script'
 import { Providers } from './providers'
 
 export const metadata = {
-  title: 'Next.js MongoDB Template',
-  description: 'A simple template with App Router, MongoDB, and shadcn/ui',
+  title: 'MathCompete \u2014 Daily Math Game',
+  description: 'A daily set of 30 math problems styled as a game for kids in grades 1\u20135.',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <head>
-        <script dangerouslySetInnerHTML={{__html:'window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);'}} />
-      </head>
       <body>
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
         <Providers>{children}</Providers>
       </body>
     </html>
