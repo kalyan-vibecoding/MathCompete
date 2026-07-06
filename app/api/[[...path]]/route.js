@@ -305,7 +305,7 @@ async function route(req, method) {
     const token = await makeSession(user.id, user.email)
     const res = json({ user: { id: user.id, email: user.email, name: user.name } })
     res.cookies.set(COOKIE, token, {
-      httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30,
+      httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: 60 * 60 * 24 * 30,
     })
     return res
   }
@@ -313,7 +313,7 @@ async function route(req, method) {
   // ---- auth: logout ----
   if (parts[0] === 'auth' && parts[1] === 'logout' && method === 'POST') {
     const res = json({ ok: true })
-    res.cookies.set(COOKIE, '', { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: 0 })
+    res.cookies.set(COOKIE, '', { httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: 0 })
     return res
   }
 
