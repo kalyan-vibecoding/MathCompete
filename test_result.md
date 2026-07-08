@@ -243,6 +243,91 @@ backend:
         -comment: "PASSED. Verified: (1) Inserted 8 completed sets across 4 dates (2025-01-10, 01-11, 01-12, 01-14 with gap on 01-13). (2) totalDollars = 16 (8 completed sets * $2). (3) daysPlayed = 4 (distinct dates). (4) streak = 1 (01-14 is isolated due to gap on 01-13). (5) No stored counter fields (totalDollars, daysPlayed, streak) in kids collection - all computed live from dailySets."
 
 frontend:
+  - task: "ENH: Speed Math mode (10 problems / 3 min / 3 per day, server-timed, scoring)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW collection speedSessions. POST /api/kids/:id/speed {date} starts/resumes a session (returns 10 problems, serverNow, timeLimit=180, firstEver). POST /api/speed/:id/answer {problemId,answer} records answer, NO re-queue, returns sessionComplete when all 10 answered. POST /api/speed/:id/finish finalizes (timer end). Server enforces 3-min+10s window; late answers rejected and session finalized. Score = 4 - 0.5*wrong (unanswered = wrong), can be negative. Max 3 sessions/day (finished+exited+expired count). Speed does NOT affect difficultyStep. Verify: perfect=+4, 2 wrong=+3, 9-10 wrong negative, timer expiry counts unanswered as wrong, 4th session blocked, late-answer rejected."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Comprehensive testing completed: (1) Start & structure: POST /api/kids/:id/speed returns correct structure with 10 problems, serverNow, timeLimit=180, firstEver=true. NO correctAnswer in client payload. MongoDB doc has correctAnswer stored server-side. (2) Scoring: Perfect session (10 correct) = starsEarned=4, perfect=true. 2-wrong session (8 correct + 2 wrong) = starsEarned=3. Very-wrong session (all 10 wrong) = starsEarned=-1 (negative). totalStars clamped at 0 and rounded to 1 decimal. (3) Timer expiry: Back-dated session startedAt to 200s in past, answer rejected with timeUp=true, unanswered problems counted as wrong in score. (4) 3-per-day cap: Completed 3 sessions, 4th blocked with locked=true. Normal sets still allow 2 independently. (5) Speed does NOT affect leveling: Completed 3 perfect speed sessions + 1 all-wrong session, difficultyStep unchanged. All speed math functionality working correctly."
+  - task: "ENH: Stars rename + fractional/clamped totals"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "API fields renamed dollars->stars: kidStats returns totalStars, todayStars, history[].stars. Answer completion returns starsEarned=2, starsToday, totalStars. totalStars = completed normal sets*2 + sum(finished speed session scores), clamped at 0 for display, rounded to 1 decimal. Verify halves display and negative clamp to 0."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) GET /api/kids returns totalStars, todayStars, history[].stars, theme, speedRemaining, speedLocked, speedEver (NO totalDollars/dollars fields). (2) Created kid, completed one normal set. Final answer response includes starsEarned=2, starsToday=2, totalStars=2. (3) totalStars increased by exactly 2. (4) Speed scoring with negative stars: totalStars clamped at 0 (never negative) and rounded to 1 decimal. All stars rename and totals working correctly."
+  - task: "ENH: No repeats within a day across normal + speed"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Generation excludes every display string already used that day (queries that day's dailySets + speedSessions). Widening fallback if not enough unique. Verify: a Grade 1 kid can do 2 normal sets (60) + 3 speed (30) = 90 problems in one day with NO duplicate display string and generator does not stall."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Created Grade 1 kid, completed 2 normal sets (60 problems) + 3 speed sessions (30 problems) = 90 total problems on ONE date. Collected all display strings from dailySets + speedSessions. Verified: 90 total problems, 90 unique displays. NO duplicate display strings across the entire day. Generator did not stall or hang. No repeats functionality working correctly."
+  - task: "ENH: Exit button (normal set + speed session)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/sets/:id/exit -> dailySet status 'exited', earns nothing, does NOT count toward 2/day (kid can start a fresh set immediately that still counts). POST /api/speed/:id/exit -> speedSession status 'exited', no star change BUT uses one of 3 daily speed slots. Verify both."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. (1) Normal exit: Started set, answered 29 problems, exited. Set status='exited', no stars awarded, totalStars unchanged. Immediately started NEW set same date and completed it (counts as 1 of 2). Completed 2nd earning set. 3rd set locked. Exit does NOT count toward 2/day cap. (2) Speed exit: Started speed session, exited. Session status='exited', totalStars unchanged, speedRemaining dropped by 1 (exit consumes a speed slot). Both exit functionalities working correctly."
+  - task: "ENH: Daily rollover / stale expiry"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Limits computed from the date sent by client each action. expireStale() marks any in_progress dailySet/speedSession with date != today as 'expired' (dead, no stars). Verify: a set left in_progress with yesterday's date earns nothing today and a fresh set starts cleanly; new-day allowance is full (2 normal, 3 speed)."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Created in_progress dailySet AND in_progress speedSession with date=yesterday. Started new set for today. Verified: (1) Yesterday's in_progress docs marked status='expired'. (2) Fresh set created for today with status='in_progress'. (3) totalStars unchanged (expired docs contribute no stars). Daily rollover and stale expiry working correctly."
+  - task: "ENH: Theme field on kids (additive)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "kids.theme new field (animals|ocean|dinosaurs|space|forest), default 'animals' for existing kids. POST /api/kids accepts theme; PUT /api/kids/:id accepts theme (validated). kidStats returns theme. Verify additive, default, persistence, two kids can hold different themes."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) POST /api/kids with theme='ocean' -> kidStats.theme='ocean'. (2) Kid created WITHOUT theme defaults to 'animals'. (3) Simulated existing kid without theme field in DB -> defaults to 'animals'. (4) PUT /api/kids/:id {theme:'space'} updates successfully. (5) Invalid theme 'purple' returns 400. (6) Two kids under same parent hold different themes simultaneously. Theme functionality working correctly."
+
   - task: "Full game UI (sign-in, picker, game, celebrations)"
     implemented: true
     working: true
@@ -261,16 +346,17 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Auth gating - protected routes return 401 without session"
-    - "Kid CRUD + cross-parent data isolation"
-    - "Problem generation rules per grade"
-    - "Answer checking, re-queue, set completion pays exactly 2, 2-set/day cap"
-    - "Adaptive difficulty step up/down"
+    - "ENH: Speed Math mode (10 problems / 3 min / 3 per day, server-timed, scoring)"
+    - "ENH: Stars rename + fractional/clamped totals"
+    - "ENH: No repeats within a day across normal + speed"
+    - "ENH: Exit button (normal set + speed session)"
+    - "ENH: Daily rollover / stale expiry"
+    - "ENH: Theme field on kids (additive)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -286,3 +372,7 @@ agent_communication:
     -message: "Backend testing complete. ALL 8 BACKEND TASKS PASSED. Created comprehensive test suite (backend_test.py) that mints JWT tokens for auth, inserts test users directly into MongoDB, and tests all functionality. All critical features working: auth gating, kid CRUD with cross-parent isolation, grade-specific problem generation rules, answer checking with $2 rewards and 2-set/day cap, reset functionality, adaptive difficulty (step up/down), grade change, and live-computed stats. No major issues found. Backend is production-ready."
     -agent: "testing"
     -message: "Frontend testing complete. ALL CRITICAL FLOWS PASSED. Tested comprehensive game flow with minted JWT session cookie (SameSite=None; Secure). Authentication working perfectly - no 401 errors. All 9 flows tested: (A) Picker + Add Kid ✓, (B) Kid Home ✓, (C) Game Screen ✓, (D) Answering wrong/correct ✓, (E) Complete full set with $2 reward ✓, (F) 2-set/day cap with 'Come back tomorrow!' ✓, (G) Reset dialog ✓, (H) Mobile viewport ✓, (I) Sound toggle + Grade change ✓. Key verifications: (1) Session cookie works in preview iframe, (2) Full set completion awards exactly $2, (3) 2-set/day cap locks correctly with moon emoji message, (4) Wrong answers show amber feedback and re-queue, (5) Correct answers show green feedback with encouragement, (6) Progress advances correctly, (7) Confetti animations on completion, (8) Mobile layout usable one-handed. App is production-ready."
+    -agent: "main"
+    -message: "ENHANCEMENT ROUND (v2). Added backward-compatible features. Please TEST BACKEND ONLY now (use minted mc_session JWT as before; insert test kids/users directly in Mongo). New/changed endpoints: POST /api/kids/:id/speed, POST /api/speed/:id/answer, /finish, /exit, POST /api/sets/:id/exit; kidStats now returns totalStars/todayStars/history[].stars/theme/speedRemaining/speedLocked/speedEver; answer completion returns starsEarned/starsToday/totalStars. Focus on the six ENH tasks in current_focus: (1) Speed scoring (perfect=4, 2 wrong=3, 9-10 wrong negative, unanswered=wrong on timer end), 3/day cap, server 3-min+10s window rejects late answers, speed does NOT change difficultyStep. (2) Stars rename + halves + clamp-at-0. (3) No repeat display strings across a full day (2 normal + 3 speed = 90 problems, Grade 1). (4) Exit: normal exit doesn't consume a normal slot; speed exit consumes a speed slot with no star change. (5) Daily rollover: yesterday in_progress -> expired, no stars; fresh set starts. (6) theme additive field default animals, two kids different themes. IMPORTANT: do NOT break existing normal-mode behavior, adaptive difficulty, auth gating, or ownership isolation."
+    -agent: "testing"
+    -message: "ENHANCEMENT TESTING COMPLETE. ALL 11 TESTS PASSED (100% success rate). Created comprehensive test suite (backend_test_enhancements.py) covering all enhancement items. Results: (1) ✅ Stars rename + totals: GET /api/kids returns totalStars/todayStars/history[].stars (NO dollars fields). Normal set completion pays starsEarned=2. Negative stars clamped at 0, rounded to 1 decimal. (2) ✅ Speed math start & structure: POST /api/kids/:id/speed returns 10 problems, NO correctAnswer in client payload, correctAnswer stored server-side in MongoDB. (3) ✅ Speed scoring: Perfect=+4 stars, 2-wrong=+3, all-wrong=-1 (negative). Scoring formula (4 - 0.5*wrong) working correctly. (4) ✅ Timer expiry: Back-dated session 200s, answer rejected with timeUp=true, unanswered counted as wrong. (5) ✅ 3-per-day speed cap: Completed 3 sessions, 4th blocked with locked=true. Normal sets allow 2 independently. (6) ✅ Speed does NOT affect leveling: 3 perfect + 1 all-wrong speed sessions, difficultyStep unchanged. (7) ✅ No repeats: Grade 1 kid completed 2 normal sets (60) + 3 speed (30) = 90 unique problems, NO duplicates. (8) ✅ Exit: Normal exit status='exited', no stars, doesn't count toward 2/day cap. Speed exit status='exited', no stars, consumes speed slot. (9) ✅ Daily rollover: Yesterday in_progress docs marked 'expired', fresh set created for today, totalStars unchanged. (10) ✅ Theme: POST with theme='ocean' works, default='animals', PUT updates, invalid rejected with 400, two kids hold different themes. (11) ✅ Regression: All existing functionality still works (auth 401, cross-parent isolation, Grade 1 single-digit, 2-set cap, adaptive difficulty). NO MAJOR ISSUES FOUND. All enhancements working correctly. Backend is production-ready."
