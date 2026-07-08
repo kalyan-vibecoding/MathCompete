@@ -568,26 +568,37 @@ function ExitButton({ onExit }) {
 }
 
 // ------------------------------- Number pad (shared) -------------------------
-function NumberPad({ typed, onDigit, onClear, onBack, onSubmit, submitDisabled, submitClass }) {
-  const pad = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
-  const Key = ({ children, onClick, variant, ...rest }) => (
-    <button onClick={onClick} {...rest}
-      className={`h-16 md:h-20 rounded-xl text-3xl font-extrabold flex items-center justify-center active:scale-90 transition shadow-sm ${variant === 'muted' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'}`}>
+// PadKey is defined at module scope (stable identity) so the pad NEVER remounts
+// on re-render — that previously caused flickering and dropped taps.
+const PAD_KEY_BASE = 'h-16 md:h-20 rounded-xl text-3xl font-extrabold flex items-center justify-center active:scale-90 transition-transform shadow-sm select-none touch-manipulation'
+function PadKey({ children, onClick, variant, ariaLabel }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={`${PAD_KEY_BASE} ${variant === 'muted' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'}`}
+    >
       {children}
     </button>
   )
+}
+
+const PAD_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+function NumberPad({ onDigit, onClear, onBack, onSubmit, submitDisabled, submitClass }) {
   return (
     <div className="pb-4">
       <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto">
-        {pad.map((d) => <Key key={d} onClick={() => onDigit(d)}>{d}</Key>)}
-        <Key onClick={onClear} variant="muted" aria-label="Clear">C</Key>
-        <Key onClick={() => onDigit('0')}>0</Key>
-        <Key onClick={onBack} variant="muted" aria-label="Delete"><Delete className="w-7 h-7" /></Key>
+        {PAD_DIGITS.map((d) => <PadKey key={d} onClick={() => onDigit(d)}>{d}</PadKey>)}
+        <PadKey onClick={onClear} variant="muted" ariaLabel="Clear">C</PadKey>
+        <PadKey onClick={() => onDigit('0')}>0</PadKey>
+        <PadKey onClick={onBack} variant="muted" ariaLabel="Delete"><Delete className="w-7 h-7" /></PadKey>
       </div>
       <div className="max-w-sm mx-auto mt-2">
         <Button onClick={onSubmit} disabled={submitDisabled} className={`w-full h-16 text-2xl font-extrabold rounded-xl text-white ${submitClass} font-display`}>
           <Check className="w-7 h-7 mr-2" /> Submit
         </Button>
+
       </div>
     </div>
   )
