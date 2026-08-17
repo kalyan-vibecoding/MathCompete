@@ -30,6 +30,20 @@ const MAX_SPEED_PER_DAY = 3
 const COOKIE = 'mc_session'
 const THEMES = ['animals', 'ocean', 'dinosaurs', 'space', 'forest']
 
+// V1.2 — avatars & Fun Math (additive)
+const AVATARS = ['bear', 'dog', 'dinosaur']
+const FUN_COLORS = ['sunset', 'sky', 'grape', 'mint', 'bubblegum', 'gold'] // unlock order
+const START_COLORS = ['sunset', 'sky'] // 2 unlocked at start, 4 earnable via Fun Math
+const FUNRUN_SIZE = 20
+
+function avatarDefaults(kid) {
+  return {
+    avatar: AVATARS.includes(kid.avatar) ? kid.avatar : 'bear',
+    avatarColor: FUN_COLORS.includes(kid.avatarColor) ? kid.avatarColor : 'sunset',
+    unlockedColors: Array.isArray(kid.unlockedColors) && kid.unlockedColors.length ? kid.unlockedColors : [...START_COLORS],
+  }
+}
+
 const LEVEL_LABELS = ['Explorer', 'Adventurer', 'Champion', 'Master', 'Legend']
 const ENCOURAGEMENTS = [
   'Amazing!', 'You rock!', 'Super brain!', 'Way to go!', 'Brilliant!',
@@ -64,7 +78,63 @@ async function getDb() {
     }
     cached.seeded = true
   }
+  // Seed funMathBank once (read-only at runtime; the offline AI script can expand it later).
+  if (!cached.fmSeeded) {
+    const fm = db.collection('funMathBank')
+    if ((await fm.countDocuments()) === 0) {
+      const items = buildFunMathBank().map((x) => ({ id: uuidv4(), ...x, createdAt: new Date() }))
+      if (items.length) await fm.insertMany(items)
+    }
+    cached.fmSeeded = true
+  }
   return db
+}
+
+// ---- Fun Math bank: templated, human-readable word problems (whole-number answers) ----
+// Produces >=150 problems/grade with difficultyTier for an easy->hard ramp.
+function buildFunMathBank() {
+  const out = []
+  const seen = new Set()
+  const push = (grade, questionText, numericAnswer, operationTag, difficultyTier) => {
+    if (numericAnswer < 0 || !Number.isInteger(numericAnswer)) return
+    const key = grade + '|' + questionText
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({ grade, questionText, numericAnswer, operationTag, difficultyTier })
+  }
+  const ri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
+  const cfg = (g) => g === 1 ? { s: 9, mt: 5, mo: 5, dv: 5 }
+    : g === 2 ? { s: 50, mt: 10, mo: 10, dv: 10 }
+    : g === 3 ? { s: 99, mt: 12, mo: 10, dv: 12 }
+    : g === 4 ? { s: 400, mt: 20, mo: 12, dv: 12 }
+    : { s: 999, mt: 20, mo: 20, dv: 20 }
+  const bump = (v, base) => Math.min(5, base + (v > 100 ? 1 : 0))
+
+  for (let g = 1; g <= 5; g++) {
+    const c = cfg(g)
+    let guard = 0
+    while (out.filter((x) => x.grade === g).length < 170 && guard < 6000) {
+      guard++
+      // addition (tier 1)
+      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `A hen laid ${a} eggs and then laid ${b} more. How many eggs in all?`, a + b, 'add', bump(a + b, 1)) }
+      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `There are ${a} red balloons and ${b} blue balloons. How many balloons altogether?`, a + b, 'add', bump(a + b, 1)) }
+      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `You read ${a} pages today and ${b} pages tomorrow. How many pages in total?`, a + b, 'add', bump(a + b, 1)) }
+      // subtraction (tier 2)
+      { const a = ri(2, c.s), b = ri(1, a); push(g, `There were ${a} apples. ${b} were eaten. How many apples are left?`, a - b, 'sub', 2) }
+      { const a = ri(2, c.s), b = ri(1, a); push(g, `A hen laid ${a} eggs and ${b} hatched. How many eggs are left?`, a - b, 'sub', 2) }
+      { const a = ri(2, c.s), b = ri(1, a); push(g, `You had ${a} stickers and gave ${b} away. How many stickers are left?`, a - b, 'sub', 2) }
+      // money change (tier 2/3)
+      { const b = ri(2, c.s), a = ri(b, c.s + 20); push(g, `You buy ${b} dollars of candy and pay with ${a} dollars. How much change do you get back?`, a - b, 'sub', bump(a, 3)) }
+      // multiplication (tier 3)
+      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `Each box has ${b} pencils. There are ${a} boxes. How many pencils in all?`, a * b, 'mul', 3) }
+      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `A spider has ${b} legs. How many legs do ${a} spiders have?`, a * b, 'mul', 3) }
+      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `Each basket holds ${b} apples. How many apples are in ${a} baskets?`, a * b, 'mul', 3) }
+      // division (tier 4)
+      { const b = ri(2, c.dv), q = ri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q; push(g, `You share ${a} candies equally among ${b} friends. How many does each friend get?`, q, 'div', 4) }
+      { const b = ri(2, c.dv), q = ri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q; push(g, `There are ${a} cookies packed into bags of ${b}. How many bags are there?`, q, 'div', 4) }
+    }
+  }
+  return out
 }
 
 // ----------------------------- auth helpers ----------------------------------
@@ -302,6 +372,7 @@ async function kidStats(db, kid, today) {
     grade: kid.grade,
     soundOn: kid.soundOn !== false,
     theme: THEMES.includes(kid.theme) ? kid.theme : 'animals',
+    ...avatarDefaults(kid),
     difficultyStep: kid.difficultyStep || 0,
     levelLabel: levelLabel(kid.difficultyStep || 0),
     totalStars,
@@ -433,9 +504,12 @@ async function route(req, method) {
     if (!firstName) return json({ error: 'Please enter a first name.' }, 400)
     if (!(grade >= 1 && grade <= 5)) return json({ error: 'Grade must be 1 to 5.' }, 400)
     const theme = THEMES.includes(body.theme) ? body.theme : 'animals'
+    const avatar = AVATARS.includes(body.avatar) ? body.avatar : 'bear'
+    const avatarColor = FUN_COLORS.includes(body.avatarColor) && START_COLORS.includes(body.avatarColor) ? body.avatarColor : 'sunset'
     const kid = {
       id: uuidv4(), userId: parent.id, firstName, grade,
-      difficultyStep: 0, soundOn: true, theme, createdAt: new Date(),
+      difficultyStep: 0, soundOn: true, theme,
+      avatar, avatarColor, unlockedColors: [...START_COLORS], createdAt: new Date(),
     }
     await kidsCol.insertOne(kid)
     return json({ kid: await kidStats(db, kid, null) })
@@ -456,6 +530,15 @@ async function route(req, method) {
     if (body.theme !== undefined) {
       if (!THEMES.includes(body.theme)) return json({ error: 'Unknown theme.' }, 400)
       update.theme = body.theme
+    }
+    if (body.avatar !== undefined) {
+      if (!AVATARS.includes(body.avatar)) return json({ error: 'Unknown avatar.' }, 400)
+      update.avatar = body.avatar
+    }
+    if (body.avatarColor !== undefined) {
+      const owned = avatarDefaults(kid).unlockedColors
+      if (!owned.includes(body.avatarColor)) return json({ error: 'Color not unlocked.' }, 400)
+      update.avatarColor = body.avatarColor
     }
     if (Object.keys(update).length) await kidsCol.updateOne({ id: kid.id }, { $set: update })
     const fresh = await kidsCol.findOne({ id: kid.id })
@@ -675,6 +758,69 @@ async function route(req, method) {
     if (!kid) return unauthorized()
     if (session.status === 'in_progress') await speedCol.updateOne({ id: session.id }, { $set: { status: 'exited' } })
     return json({ ok: true, kid: await kidStats(db, kid, session.date) })
+  }
+
+  // ---- start a FUN MATH run ----  POST /api/kids/:id/funmath { date }
+  if (parts[0] === 'kids' && parts[2] === 'funmath' && method === 'POST') {
+    const kid = await kidsCol.findOne({ id: parts[1], userId: parent.id })
+    if (!kid) return json({ error: 'Kid not found' }, 404)
+    const date = (body.date || ymd(new Date())).toString()
+    const bank = await db.collection('funMathBank').find({ grade: kid.grade }).toArray()
+    if (bank.length < FUNRUN_SIZE) return json({ error: 'Question bank not ready.' }, 503)
+    const picked = shuffle([...bank]).slice(0, FUNRUN_SIZE)
+      .sort((a, b) => (a.difficultyTier || 3) - (b.difficultyTier || 3)) // ramp easy -> hard
+    const run = {
+      id: uuidv4(), kidId: kid.id, date, status: 'in_progress',
+      questions: picked.map((q) => ({ id: q.id, answered: false, correct: false, given: null })),
+      colorUnlocked: null, createdAt: new Date(),
+    }
+    await db.collection('funMathRuns').insertOne(run)
+    return json({
+      run: { id: run.id, total: FUNRUN_SIZE, questions: picked.map((q) => ({ id: q.id, questionText: q.questionText })) },
+    })
+  }
+
+  // ---- answer a FUN MATH question ----  POST /api/funmath/:id/answer { questionId, answer }
+  if (parts[0] === 'funmath' && parts[2] === 'answer' && method === 'POST') {
+    const run = await db.collection('funMathRuns').findOne({ id: parts[1] })
+    if (!run) return json({ error: 'Run not found' }, 404)
+    const kid = await kidsCol.findOne({ id: run.kidId, userId: parent.id })
+    if (!kid) return unauthorized()
+    if (run.status !== 'in_progress') return json({ error: 'Run already finished.' }, 400)
+
+    const q = run.questions.find((x) => x.id === body.questionId)
+    if (!q) return json({ error: 'Question not found' }, 400)
+    const bankItem = await db.collection('funMathBank').findOne({ id: body.questionId })
+    if (!bankItem) return json({ error: 'Question not found' }, 400)
+    const answer = Number(body.answer)
+    if (!Number.isFinite(answer)) return json({ error: 'Answer must be a number.' }, 400)
+
+    q.answered = true; q.given = answer
+    q.correct = answer === bankItem.numericAnswer
+    const correctCount = run.questions.filter((x) => x.correct).length
+    const allCorrect = run.questions.every((x) => x.correct)
+
+    if (allCorrect) {
+      // grant exactly one new color (server-side), until the kid owns them all
+      const owned = avatarDefaults(kid).unlockedColors
+      const next = FUN_COLORS.find((c) => !owned.includes(c))
+      let unlockedColors = owned
+      if (next) { unlockedColors = [...owned, next]; await kidsCol.updateOne({ id: kid.id }, { $set: { unlockedColors } }) }
+      await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions, status: 'completed', colorUnlocked: next || null, completedAt: new Date() } })
+      return json({ correct: true, runComplete: true, colorUnlocked: next || null, allOwned: !next, unlockedColors, correctCount })
+    }
+    await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions } })
+    return json({ correct: q.correct, message: q.correct ? null : 'Almost! Try again', correctCount, total: FUNRUN_SIZE, runComplete: false })
+  }
+
+  // ---- exit a FUN MATH run ----  POST /api/funmath/:id/exit
+  if (parts[0] === 'funmath' && parts[2] === 'exit' && method === 'POST') {
+    const run = await db.collection('funMathRuns').findOne({ id: parts[1] })
+    if (!run) return json({ error: 'Run not found' }, 404)
+    const kid = await kidsCol.findOne({ id: run.kidId, userId: parent.id })
+    if (!kid) return unauthorized()
+    if (run.status === 'in_progress') await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { status: 'exited' } })
+    return json({ ok: true })
   }
 
   return json({ error: 'Not found' }, 404)

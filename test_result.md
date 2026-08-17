@@ -328,6 +328,112 @@ frontend:
         -agent: "testing"
         -comment: "PASSED. Verified: (1) POST /api/kids with theme='ocean' -> kidStats.theme='ocean'. (2) Kid created WITHOUT theme defaults to 'animals'. (3) Simulated existing kid without theme field in DB -> defaults to 'animals'. (4) PUT /api/kids/:id {theme:'space'} updates successfully. (5) Invalid theme 'purple' returns 400. (6) Two kids under same parent hold different themes simultaneously. Theme functionality working correctly."
 
+  - task: "V1.2: funMathBank seeding (150+ per grade)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW collection funMathBank (read-only, auto-seeded on first authenticated DB access). buildFunMathBank() generates >=150 templated word problems per grade 1-5, each with {id, grade, questionText, numericAnswer (whole integer >=0), operationTag, difficultyTier, createdAt}. Seeded once at startup."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified funMathBank collection has >=150 questions per grade 1-5 (Grade 1: 170, Grade 2: 172, Grade 3: 175, Grade 4: 178, Grade 5: 178). All questions have required fields: id, grade, questionText, numericAnswer (whole integer >=0), operationTag, difficultyTier, createdAt. Seeding working correctly."
+
+  - task: "V1.2: Avatars (additive + validation)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW fields on kids: avatar (bear|dog|dinosaur), avatarColor (sunset|sky|grape|mint|bubblegum|gold), unlockedColors (array). Defaults: avatar='bear', avatarColor='sunset', unlockedColors=['sunset','sky']. POST /api/kids accepts avatar. PUT /api/kids/:id validates avatar (must be in AVATARS list) and avatarColor (must be in kid's unlockedColors). Legacy kids without these fields get defaults at read time (avatarDefaults() helper). Two kids can hold different avatars simultaneously."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) POST /api/kids with avatar='dog' returns avatar='dog', avatarColor='sunset', unlockedColors=['sunset','sky']. (2) Legacy kid without avatar fields gets defaults (avatar='bear', avatarColor='sunset', unlockedColors=['sunset','sky']) WITHOUT modifying DB doc. (3) PUT /api/kids/:id with avatar='dinosaur' succeeds, invalid avatar='cat' returns 400. (4) PUT with locked color 'grape' returns 400, unlocked color 'sky' succeeds and persists. (5) Two kids under one parent hold different avatars simultaneously. All avatar functionality working correctly."
+
+  - task: "V1.2: Fun Math run (20 questions, server-timed)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW collection funMathRuns. POST /api/kids/:id/funmath {date} starts a Fun Math run: picks 20 random questions from funMathBank for kid's grade, sorts by difficultyTier ascending (easy->hard ramp), returns {run:{id, total:20, questions:[{id, questionText}]}}. NO numericAnswer sent to client. Creates funMathRuns doc with status='in_progress', questions array with {id, answered, correct, given}."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) POST /api/kids/:id/funmath returns run with total=20, questions array with 20 items. (2) NO numericAnswer in client response. (3) All 20 questions from kid's grade (2). (4) No repeating questions within run. (5) Questions ordered by difficultyTier ascending [1,1,1,1,1,1,1,2,2,2,3,3,3,3,3,3,3,4,4,4]. (6) funMathRuns doc created in DB with status='in_progress'. Fun Math run working correctly."
+
+  - task: "V1.2: Fun Math server-side checking + color unlock"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/funmath/:id/answer {questionId, answer} checks answer server-side (reads numericAnswer from funMathBank). Wrong answer returns {correct:false, message}. When all 20 answered correctly, grants exactly ONE new color (first not-yet-owned in order sunset,sky,grape,mint,bubblegum,gold), updates kid.unlockedColors in DB, returns {correct:true, runComplete:true, colorUnlocked:<color>, allOwned:false, unlockedColors:[...]}. After all 6 owned, returns allOwned:true, colorUnlocked:null. Client CANNOT cheat: run completes only when server verifies all 20 correct."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) Answered first 19 correctly, run not complete. (2) Wrong answer on question 20 returns correct=false, message present, run NOT complete. (3) Correct answer on question 20 returns correct=true, runComplete=true, colorUnlocked='grape', allOwned=false, unlockedColors=['sunset','sky','grape']. (4) Kid's unlockedColors in DB updated to include 'grape'. (5) Repeat perfect runs unlock next colors in order: mint, bubblegum, gold (one per run). (6) After all 6 colors owned, perfect run returns allOwned=true, colorUnlocked=null. (7) Client cannot cheat: run cannot be completed without all 20 verified correct by server. All Fun Math checking + unlock working correctly."
+
+  - task: "V1.2: Fun Math exit"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/funmath/:id/exit sets run status='exited'. No color unlock, unlockedColors unchanged. Returns {ok:true}."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) POST /api/funmath/:id/exit sets run status='exited' in DB. (2) No color unlock after exit. (3) unlockedColors unchanged in DB. Fun Math exit working correctly."
+
+  - task: "V1.2: Security / Ownership (Fun Math)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Fun Math routes require valid session (401 without). Parent B cannot answer/exit Parent A's run (401/404). numericAnswer NEVER appears in any API response (only questionText sent to client, correctAnswer stored server-side only)."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) POST /api/kids/:id/funmath returns 401 without session. (2) Parent B cannot answer Parent A's run (returns 401). (3) Parent B cannot exit Parent A's run (returns 401). (4) numericAnswer NOT in start run response. (5) numericAnswer NOT in answer response. All security and ownership checks working correctly."
+
+  - task: "V1.2: Regression (existing features unaffected)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "V1.2 additions are backward-compatible. Existing features must still work: unauthenticated -> 401, stars totals & speed math unaffected, normal-set $2/2-per-day still works, existing kids still load. Just Practice has NO server endpoints (client-only, unscored) — no /api practice route."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified: (1) Unauthenticated GET /api/kids returns 401. (2) Normal set completion: starsEarned=2, totalStars=2. (3) Speed session: starsEarned=4, totalStars=6 (2 normal + 4 speed). (4) 2-per-day cap: locked=true after 2 completed sets, third set returns locked=true. (5) GET /api/kids returns all kids. (6) No /api practice route (returns 404). All existing features working correctly, no regressions."
+
+
   - task: "Full game UI (sign-in, picker, game, celebrations)"
     implemented: true
     working: true
@@ -337,6 +443,10 @@ frontend:
     needs_retesting: false
     status_history:
         -working: "NA"
+    -agent: "main"
+    -message: "V1.2 ADDITIONS. Added Fun Math mode (20 word problems from funMathBank, server-side checking, color unlock system) + Avatars (bear/dog/dinosaur with 6 unlockable colors). Please TEST BACKEND ONLY. New endpoints: POST /api/kids/:id/funmath, POST /api/funmath/:id/answer, POST /api/funmath/:id/exit. New fields: kids.avatar, kids.avatarColor, kids.unlockedColors (additive, defaults provided). New collection: funMathBank (auto-seeded >=150/grade), funMathRuns. Focus on: (1) funMathBank seeding (150+ docs per grade 1-5 with correct fields). (2) Avatars: POST /api/kids with avatar, legacy kids get defaults, PUT validation (invalid avatar/locked color -> 400), two kids different avatars. (3) Fun Math run: 20 questions, NO numericAnswer in response, ordered by difficultyTier, no repeats, funMathRuns doc created. (4) Server-side checking: all 20 correct unlocks ONE color (sunset,sky,grape,mint,bubblegum,gold in order), wrong answer doesn't complete, client cannot cheat, after all 6 owned returns allOwned:true. (5) Exit: status='exited', no unlock. (6) Security: 401 without session, cross-parent isolation, numericAnswer never in response. (7) Regression: existing features (auth, stars, speed, normal sets, 2/day cap) unaffected, no /api practice route."
+    -agent: "testing"
+    -message: "V1.2 TESTING COMPLETE. ALL 7 TESTS PASSED (100% success rate). Created comprehensive test suite (backend_test_v12.py) covering all V1.2 additions. Results: (1) ✅ funMathBank Seeding: Verified >=150 questions per grade 1-5 (Grade 1: 170, Grade 2: 172, Grade 3: 175, Grade 4: 178, Grade 5: 178) with all required fields (id, grade, questionText, numericAnswer as whole integer >=0, operationTag, difficultyTier, createdAt). (2) ✅ Avatars: POST /api/kids with avatar='dog' works, legacy kids get defaults WITHOUT DB modification, PUT validation works (invalid avatar/locked color returns 400, valid updates persist), two kids hold different avatars. (3) ✅ Fun Math Run: Returns 20 questions with NO numericAnswer, all from kid's grade, no repeats, ordered by difficultyTier ascending [1,1,1,1,1,1,1,2,2,2,3,3,3,3,3,3,3,4,4,4], funMathRuns doc created with status='in_progress'. (4) ✅ Server-Side Checking + Unlock: First 19 correct doesn't complete run, wrong answer returns correct=false with message and doesn't complete, final correct answer returns runComplete=true with colorUnlocked='grape', kid's unlockedColors updated in DB, repeat perfect runs unlock colors in order (mint, bubblegum, gold), after all 6 owned returns allOwned=true with colorUnlocked=null, client cannot cheat (must verify all 20 server-side). (5) ✅ Fun Math Exit: Sets status='exited', no unlock, unlockedColors unchanged. (6) ✅ Security/Ownership: 401 without session, Parent B cannot access Parent A's run (401), numericAnswer never in API responses. (7) ✅ Regression: All existing features work (auth 401, normal set starsEarned=2, speed starsEarned=4, 2-per-day cap, kids load, no /api practice route). NO MAJOR ISSUES FOUND. All V1.2 features working correctly. Backend is production-ready."
         -agent: "main"
         -comment: "User granted permission for frontend testing. Fixed session-cookie bug: cookie was SameSite=Lax which is dropped inside the preview iframe (sign-in set the cookie but follow-up requests returned 401 'Not signed in'). Changed to SameSite=None; Secure. Please retest full flow using a minted mc_session cookie."
         -working: true
@@ -345,18 +455,12 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 3
+  version: "1.2"
+  test_sequence: 4
   run_ui: true
 
 test_plan:
-  current_focus:
-    - "ENH: Speed Math mode (10 problems / 3 min / 3 per day, server-timed, scoring)"
-    - "ENH: Stars rename + fractional/clamped totals"
-    - "ENH: No repeats within a day across normal + speed"
-    - "ENH: Exit button (normal set + speed session)"
-    - "ENH: Daily rollover / stale expiry"
-    - "ENH: Theme field on kids (additive)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
