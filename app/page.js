@@ -19,7 +19,9 @@ import {
 import {
   Check, RotateCcw, Volume2, VolumeX, Plus, Star, Pencil, LogOut, Delete, Heart,
   PartyPopper, CalendarDays, Flame, ArrowUp, ArrowDown, Sparkles, DoorOpen, Zap, Palette,
+  Divide, Minus, X as XIcon, ArrowLeft, Puzzle, Dumbbell, ChevronRight, Lock,
 } from 'lucide-react'
+import { useId } from 'react'
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 const today = () => new Date().toLocaleDateString('en-CA') // YYYY-MM-DD (device local)
@@ -103,6 +105,7 @@ export default function App() {
   const [speed, setSpeed] = useState(null) // {id, problems, startedAt, serverNow, timeLimit}
   const [speedResult, setSpeedResult] = useState(null)
   const [showExplainer, setShowExplainer] = useState(false)
+  const [avatarOpen, setAvatarOpen] = useState(false)
 
   const [busy, setBusy] = useState(false)
   const soundRef = useRef(true)
@@ -262,7 +265,19 @@ export default function App() {
             }}
             onGradeChange={async (grade) => { await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ grade }) }); refreshActiveKid() }}
             onThemeChange={async (th) => { setActiveKid((k) => ({ ...k, theme: th })); await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ theme: th }) }); refreshActiveKid() }}
+            onPractice={() => setMode('practice')} onFunMath={() => setMode('funmath')}
+            onOpenAvatar={() => setAvatarOpen(true)}
           />
+        )}
+
+        {activeKid && mode === 'practice' && (
+          <PracticeSection grade={activeKid.grade} theme={theme} sound={sound} onExit={goHome} />
+        )}
+
+        {activeKid && mode === 'funmath' && (
+          <FunMath kid={activeKid} theme={theme} sound={sound} reducedMotion={reducedMotion} api={api}
+            onDone={refreshActiveKid}
+            onExit={async (goAvatar) => { await goHome(); if (goAvatar === 'avatar') setAvatarOpen(true) }} />
         )}
 
         {activeKid && mode === 'normal' && set && (
@@ -295,6 +310,20 @@ export default function App() {
       {showExplainer && (
         <SpeedExplainer theme={theme} onClose={() => setShowExplainer(false)} onGo={() => { setShowExplainer(false); actuallyStartSpeed() }} />
       )}
+      <Dialog open={avatarOpen} onOpenChange={setAvatarOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="font-display">My Avatar</DialogTitle></DialogHeader>
+          {activeKid && (
+            <AvatarPicker kid={activeKid}
+              onClose={() => setAvatarOpen(false)}
+              onSave={async (avatar, avatarColor) => {
+                setActiveKid((k) => ({ ...k, avatar, avatarColor }))
+                await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ avatar, avatarColor }) })
+                refreshActiveKid(); setAvatarOpen(false)
+              }} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -354,15 +383,16 @@ function Picker({ kids, onSelect, onAdd, api }) {
   const [firstName, setFirstName] = useState('')
   const [grade, setGrade] = useState('1')
   const [themeKey, setThemeKey] = useState('animals')
+  const [avatarKey, setAvatarKey] = useState('bear')
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
   const addKid = async () => {
     setErr(''); setSaving(true)
-    const res = await api('/api/kids', { method: 'POST', body: JSON.stringify({ firstName, grade: Number(grade), theme: themeKey }) })
+    const res = await api('/api/kids', { method: 'POST', body: JSON.stringify({ firstName, grade: Number(grade), theme: themeKey, avatar: avatarKey }) })
     setSaving(false)
     if (!res.ok) { setErr(res.data?.error || 'Could not add player.'); return }
-    setFirstName(''); setGrade('1'); setThemeKey('animals'); setOpen(false); onAdd()
+    setFirstName(''); setGrade('1'); setThemeKey('animals'); setAvatarKey('bear'); setOpen(false); onAdd()
   }
 
   return (
@@ -376,12 +406,15 @@ function Picker({ kids, onSelect, onAdd, api }) {
             <button key={kid.id} onClick={() => onSelect(kid)}
               className={`${t.solid} text-white rounded-2xl p-6 text-left shadow-lg hover:opacity-95 active:scale-95 transition min-h-[44px] relative overflow-hidden`}>
               <div className="absolute right-2 top-2 text-6xl opacity-30">{t.emoji}</div>
-              <div className="relative">
-                <span className="text-3xl font-extrabold font-display">{kid.firstName}</span>
-                <div className="mt-1 text-white/90 font-semibold">Grade {kid.grade} · {t.name}</div>
-                <div className="mt-4 flex items-center gap-2 bg-white/25 rounded-full px-3 py-1 w-fit">
-                  <Star className="w-5 h-5 fill-white" />
-                  <span className="font-bold text-lg">{fmtStars(kid.totalStars)}</span>
+              <div className="relative flex items-start gap-3">
+                <div className="bg-white/25 rounded-2xl p-1 shrink-0"><Avatar type={kid.avatar} color={kid.avatarColor} size={52} /></div>
+                <div>
+                  <span className="text-3xl font-extrabold font-display">{kid.firstName}</span>
+                  <div className="mt-1 text-white/90 font-semibold">Grade {kid.grade} · {t.name}</div>
+                  <div className="mt-3 flex items-center gap-2 bg-white/25 rounded-full px-3 py-1 w-fit">
+                    <Star className="w-5 h-5 fill-white" />
+                    <span className="font-bold text-lg">{fmtStars(kid.totalStars)}</span>
+                  </div>
                 </div>
               </div>
             </button>
@@ -412,6 +445,16 @@ function Picker({ kids, onSelect, onAdd, api }) {
                 <Label>Theme</Label>
                 <ThemeTiles value={themeKey} onChange={setThemeKey} />
               </div>
+              <div className="space-y-2">
+                <Label>Avatar</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {AVATAR_LIST.map((a) => (
+                    <button key={a} type="button" onClick={() => setAvatarKey(a)} className={`rounded-xl p-2 border-2 flex flex-col items-center gap-1 ${avatarKey === a ? 'border-slate-800 ring-2 ring-slate-800' : 'border-slate-200'}`}>
+                      <Avatar type={a} color="sunset" size={48} /><span className="text-xs font-bold font-display">{AVATAR_LABEL[a]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               {err && <p className="text-sm text-red-600">{err}</p>}
             </div>
             <DialogFooter>
@@ -425,7 +468,7 @@ function Picker({ kids, onSelect, onAdd, api }) {
 }
 
 // ------------------------------- KidHome -------------------------------------
-function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChange, onThemeChange }) {
+function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChange, onThemeChange, onPractice, onFunMath, onOpenAvatar }) {
   const [editOpen, setEditOpen] = useState(false)
   const [themeOpen, setThemeOpen] = useState(false)
   const [grade, setGrade] = useState(String(kid.grade))
@@ -433,10 +476,15 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-3xl font-extrabold text-slate-800 font-display">Hi {kid.firstName}! 👋</h2>
-          <div className={`flex items-center gap-2 mt-1 font-bold ${theme.text}`}>
-            <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {kid.levelLabel}
+        <div className="flex items-center gap-3">
+          <button onClick={onOpenAvatar} aria-label="My Avatar" className="rounded-full bg-white border border-slate-200 shadow-sm p-1 shrink-0 active:scale-95">
+            <Avatar type={kid.avatar} color={kid.avatarColor} size={56} />
+          </button>
+          <div>
+            <h2 className="text-3xl font-extrabold text-slate-800 font-display">Hi {kid.firstName}! 👋</h2>
+            <div className={`flex items-center gap-2 mt-1 font-bold ${theme.text}`}>
+              <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {kid.levelLabel}
+            </div>
           </div>
         </div>
         <button onClick={onToggleSound} aria-label={kid.soundOn !== false ? 'Turn sound off' : 'Turn sound on'}
@@ -490,6 +538,20 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
         </Button>
       )}
 
+      {/* V1.2 sections */}
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={onPractice} className="rounded-2xl p-5 bg-white/95 border-2 border-slate-200 hover:border-indigo-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[100px]">
+          <Dumbbell className="w-8 h-8 text-indigo-600" />
+          <span className="text-lg font-extrabold text-slate-800 font-display">Just Practice</span>
+          <span className="text-xs text-slate-500">No stars, no timer</span>
+        </button>
+        <button onClick={onFunMath} className="rounded-2xl p-5 bg-white/95 border-2 border-slate-200 hover:border-fuchsia-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[100px]">
+          <Puzzle className="w-8 h-8 text-fuchsia-600" />
+          <span className="text-lg font-extrabold text-slate-800 font-display">Fun Math</span>
+          <span className="text-xs text-slate-500">Word problems · win a color</span>
+        </button>
+      </div>
+
       {kid.history?.length > 0 && (
         <Card className="p-4 bg-white/95">
           <h3 className="font-bold text-slate-700 mb-1 font-display">Your history</h3>
@@ -505,6 +567,7 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
       )}
 
       <div className="flex flex-wrap justify-center gap-2 pt-2">
+        <Button variant="ghost" size="sm" className="gap-1 text-slate-600" onClick={onOpenAvatar}><Palette className="w-4 h-4" /> My Avatar</Button>
         <Dialog open={themeOpen} onOpenChange={setThemeOpen}>
           <DialogTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-1 text-slate-600"><Palette className="w-4 h-4" /> Change theme</Button>
@@ -854,6 +917,288 @@ function SpeedResultOverlay({ data, theme, onClose, reducedMotion }) {
         <p className="text-slate-500 mt-1">Total: {fmtStars(data.totalStars)} ⭐ · {data.speedRemaining} speed left today</p>
         <Button onClick={onClose} className={`mt-6 w-full h-14 text-xl font-bold text-white ${theme.solid} font-display`}>Done</Button>
       </Card>
+    </div>
+  )
+}
+
+// ============================ V1.2: Avatars ==================================
+const AV_COLORS = { sunset: '#f97316', sky: '#3b82f6', grape: '#8b5cf6', mint: '#10b981', bubblegum: '#ec4899', gold: '#eab308' }
+const AV_COLOR_ORDER = ['sunset', 'sky', 'grape', 'mint', 'bubblegum', 'gold']
+const AVATAR_LIST = ['bear', 'dog', 'dinosaur']
+const AVATAR_LABEL = { bear: 'Bear', dog: 'Dog', dinosaur: 'Dinosaur' }
+
+function Avatar({ type = 'bear', color = 'sunset', size = 96 }) {
+  const uid = useId().replace(/:/g, '')
+  const base = AV_COLORS[color] || AV_COLORS.sunset
+  const gid = `av-${uid}`
+  const eyes = (
+    <>
+      <circle cx="38" cy="52" r="5" fill="#1f2937" />
+      <circle cx="62" cy="52" r="5" fill="#1f2937" />
+      <circle cx="40" cy="50" r="1.6" fill="#fff" />
+      <circle cx="64" cy="50" r="1.6" fill="#fff" />
+    </>
+  )
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label={`${AVATAR_LABEL[type]} avatar`}>
+      <defs>
+        <radialGradient id={gid} cx="38%" cy="32%" r="75%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.55" />
+          <stop offset="45%" stopColor={base} />
+          <stop offset="100%" stopColor="#00000055" />
+        </radialGradient>
+      </defs>
+      {type === 'bear' && (<g>
+        <circle cx="26" cy="26" r="13" fill={`url(#${gid})`} /><circle cx="74" cy="26" r="13" fill={`url(#${gid})`} />
+        <circle cx="26" cy="26" r="6" fill="#00000022" /><circle cx="74" cy="26" r="6" fill="#00000022" />
+        <circle cx="50" cy="55" r="38" fill={`url(#${gid})`} />
+        <ellipse cx="50" cy="66" rx="16" ry="13" fill="#ffffffcc" />
+        {eyes}<ellipse cx="50" cy="62" rx="4.5" ry="3.5" fill="#1f2937" /><path d="M50 65 q7 6 12 1" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      </g>)}
+      {type === 'dog' && (<g>
+        <ellipse cx="18" cy="42" rx="11" ry="22" fill={`url(#${gid})`} /><ellipse cx="82" cy="42" rx="11" ry="22" fill={`url(#${gid})`} />
+        <circle cx="50" cy="52" r="38" fill={`url(#${gid})`} />
+        <ellipse cx="50" cy="66" rx="18" ry="14" fill="#ffffffcc" />
+        {eyes}<ellipse cx="50" cy="63" rx="5" ry="4" fill="#1f2937" /><path d="M50 67 v6" stroke="#1f2937" strokeWidth="2.5" strokeLinecap="round" /><path d="M44 74 q6 5 12 0" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      </g>)}
+      {type === 'dinosaur' && (<g>
+        <path d="M30 20 l6 12 l-12 0 z" fill="#00000033" /><path d="M50 12 l7 14 l-14 0 z" fill="#00000033" /><path d="M70 20 l6 12 l-12 0 z" fill="#00000033" />
+        <circle cx="50" cy="56" r="38" fill={`url(#${gid})`} />
+        <ellipse cx="52" cy="70" rx="20" ry="14" fill="#ffffffbb" />
+        {eyes}<circle cx="60" cy="70" r="2" fill="#1f2937" /><circle cx="46" cy="70" r="2" fill="#1f2937" /><path d="M42 78 q10 6 20 0" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      </g>)}
+    </svg>
+  )
+}
+
+function AvatarPicker({ kid, onSave, onClose }) {
+  const [type, setType] = useState(kid.avatar || 'bear')
+  const [color, setColor] = useState(kid.avatarColor || 'sunset')
+  const owned = kid.unlockedColors || ['sunset', 'sky']
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-center py-2"><Avatar type={type} color={color} size={120} /></div>
+      <div>
+        <Label className="mb-2 block">Character</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {AVATAR_LIST.map((a) => (
+            <button key={a} type="button" onClick={() => setType(a)} className={`rounded-xl p-2 border-2 flex flex-col items-center gap-1 ${type === a ? 'border-slate-800 ring-2 ring-slate-800' : 'border-slate-200'}`}>
+              <Avatar type={a} color={color} size={56} /><span className="text-xs font-bold font-display">{AVATAR_LABEL[a]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Label className="mb-2 block">Color</Label>
+        <div className="flex flex-wrap gap-3">
+          {AV_COLOR_ORDER.map((c) => {
+            const isOwned = owned.includes(c)
+            return (
+              <button key={c} type="button" disabled={!isOwned} onClick={() => setColor(c)}
+                aria-label={c} className={`w-11 h-11 rounded-full flex items-center justify-center border-2 ${color === c ? 'border-slate-800 ring-2 ring-slate-800' : 'border-white'} ${!isOwned ? 'opacity-40' : ''}`}
+                style={{ backgroundColor: AV_COLORS[c] }}>
+                {!isOwned && <Lock className="w-4 h-4 text-white" />}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-2">Earn locked colors with a perfect Fun Math run!</p>
+      </div>
+      <div className="flex gap-2 pt-2">
+        <Button variant="outline" onClick={onClose} className="flex-1 h-12">Cancel</Button>
+        <Button onClick={() => onSave(type, color)} className="flex-1 h-12">Save</Button>
+      </div>
+    </div>
+  )
+}
+
+// ============================ V1.2: Just Practice ============================
+const P_MAX = { 1: { s: 9, dv: 5 }, 2: { s: 50, dv: 10 }, 3: { s: 99, dv: 12 }, 4: { s: 400, dv: 12 }, 5: { s: 999, dv: 20 } }
+const pri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
+function genPractice(op, grade) {
+  const c = P_MAX[grade] || P_MAX[1]
+  if (op === 'add') { const a = pri(1, c.s), b = pri(1, c.s); return { display: `${a} + ${b} =`, answer: a + b } }
+  if (op === 'sub') { const a = pri(2, c.s), b = pri(1, a); return { display: `${a} - ${b} =`, answer: a - b } }
+  const b = pri(2, c.dv), q = pri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q
+  return { display: `${a} \u00f7 ${b} =`, answer: q }
+}
+function genPage(op, grade, prevSet) {
+  const out = []; const seen = new Set(); let g = 0
+  while (out.length < 10 && g < 3000) { g++; const p = genPractice(op, grade); if (seen.has(p.display) || (prevSet && prevSet.has(p.display))) continue; seen.add(p.display); out.push({ id: 'p' + out.length + '-' + Math.random().toString(36).slice(2, 6), ...p }) }
+  return out
+}
+function genTable(table) {
+  return Array.from({ length: 10 }, (_, i) => ({ id: 't' + (i + 1), display: `${table} \u00d7 ${i + 1} =`, answer: table * (i + 1) }))
+}
+
+function PracticeSection({ grade, theme, sound, onExit }) {
+  const [op, setOp] = useState(null)     // add|sub|div|mul
+  const [table, setTable] = useState(null)
+  const [items, setItems] = useState([]) // {id, display, answer, value, locked}
+  const [prevSet, setPrevSet] = useState(null)
+  const [checked, setChecked] = useState(false)
+  const [active, setActive] = useState(null) // id currently typing
+  const [done, setDone] = useState(false)
+
+  const startOp = (o) => { setOp(o); setTable(null); if (o === 'mul') { setItems([]) } else { const pg = genPage(o, grade, null); setItems(pg.map((x) => ({ ...x, value: '', locked: false }))); setPrevSet(new Set(pg.map((x) => x.display))); setActive(pg[0].id) } setChecked(false); setDone(false) }
+  const startTable = (t) => { setTable(t); const tb = genTable(t); setItems(tb.map((x) => ({ ...x, value: '', locked: false }))); setActive(tb[0].id); setChecked(false); setDone(false) }
+  const nextPage = () => { const pg = genPage(op, grade, prevSet); setItems(pg.map((x) => ({ ...x, value: '', locked: false }))); setPrevSet(new Set(pg.map((x) => x.display))); setActive(pg[0].id); setChecked(false); setDone(false) }
+
+  const submit = () => {
+    let allRight = true
+    const upd = items.map((it) => {
+      if (it.locked) return it
+      const ok = it.value !== '' && Number(it.value) === it.answer
+      if (!ok) allRight = false
+      return { ...it, locked: ok, value: ok ? it.value : '' }
+    })
+    setItems(upd); setChecked(true)
+    if (allRight) { sound.fanfare(); setDone(true) }
+    else { sound.wrong(); const firstOpen = upd.find((x) => !x.locked); setActive(firstOpen ? firstOpen.id : null) }
+  }
+  const allFilled = items.length > 0 && items.every((it) => it.locked || it.value !== '')
+  const type = (d) => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active && !it.locked ? { ...it, value: (String(it.value) + d).slice(0, 6) } : it)) }
+  const back = () => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active ? { ...it, value: String(it.value).slice(0, -1) } : it)) }
+  const clear = () => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active ? { ...it, value: '' } : it)) }
+
+  const Header = ({ title }) => (
+    <div className="flex items-center gap-2 mb-4">
+      <button onClick={onExit} aria-label="Exit" className="flex items-center gap-1 h-11 px-3 rounded-full bg-white border border-slate-200 text-slate-600 font-bold shadow-sm"><DoorOpen className="w-5 h-5" /> Exit</button>
+      <h2 className="text-2xl font-extrabold text-slate-800 font-display flex-1 text-center pr-16">{title}</h2>
+    </div>
+  )
+
+  if (!op) return (
+    <div>
+      <Header title="Just Practice" />
+      <p className="text-center text-slate-600 mb-6">Practice as much as you like. No stars, no timer.</p>
+      <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+        {[['add', 'Addition', <Plus key="a" className="w-8 h-8" />], ['sub', 'Subtraction', <Minus key="s" className="w-8 h-8" />], ['div', 'Division', <Divide key="d" className="w-8 h-8" />], ['mul', 'Multiplication', <XIcon key="m" className="w-8 h-8" />]].map(([k, label, icon]) => (
+          <button key={k} onClick={() => startOp(k)} className={`${theme.solid} text-white rounded-2xl p-6 flex flex-col items-center gap-2 shadow-lg active:scale-95 min-h-[110px] font-display`}>
+            {icon}<span className="text-xl font-extrabold">{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  if (op === 'mul' && !table) return (
+    <div>
+      <Header title="Pick a table" />
+      <div className="grid grid-cols-5 gap-2 max-w-md mx-auto">
+        {Array.from({ length: 20 }, (_, i) => i + 1).map((t) => (
+          <button key={t} onClick={() => startTable(t)} className="h-14 rounded-xl bg-white border border-slate-200 text-xl font-extrabold text-slate-800 active:scale-90 shadow-sm font-display">{t}</button>
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="pb-4">
+      <Header title={op === 'mul' ? `Table of ${table}` : { add: 'Addition', sub: 'Subtraction', div: 'Division' }[op]} />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 max-w-lg mx-auto mb-4">
+        {items.map((it) => (
+          <button key={it.id} onClick={() => !it.locked && setActive(it.id)}
+            className={`flex items-center justify-between rounded-xl px-3 h-14 border-2 text-xl font-bold font-display ${it.locked ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : active === it.id ? 'bg-white border-indigo-500' : checked ? 'bg-amber-50 border-amber-400' : 'bg-white border-slate-200'}`}>
+            <span className="text-slate-800">{it.display}</span>
+            <span className="min-w-[42px] text-right">{it.locked ? <Check className="w-6 h-6 inline text-emerald-600" /> : (it.value || <span className="text-slate-300">?</span>)}</span>
+          </button>
+        ))}
+      </div>
+
+      {done ? (
+        <div className="text-center space-y-3">
+          <div className="text-2xl font-extrabold text-emerald-600 font-display">Great job! All correct 🎉</div>
+          <div className="flex gap-2 justify-center">
+            {op === 'mul'
+              ? <Button onClick={() => setTable(null)} className={`h-14 px-6 text-lg text-white ${theme.solid} font-display`}>Another table</Button>
+              : <Button onClick={nextPage} className={`h-14 px-6 text-lg text-white ${theme.solid} font-display`}>Next page</Button>}
+            <Button variant="outline" onClick={onExit} className="h-14 px-6 text-lg">Done</Button>
+          </div>
+        </div>
+      ) : (
+        <NumberPad onDigit={type} onClear={clear} onBack={back} onSubmit={submit} submitDisabled={!allFilled} submitClass={theme.solid} />
+      )}
+    </div>
+  )
+}
+
+// ============================ V1.2: Fun Math =================================
+function FunMath({ kid, theme, sound, reducedMotion, api, onExit, onDone }) {
+  const [run, setRun] = useState(null)
+  const [idx, setIdx] = useState(0)
+  const [typed, setTyped] = useState('')
+  const [feedback, setFeedback] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+    ;(async () => {
+      const { data } = await api(`/api/kids/${kid.id}/funmath`, { method: 'POST', body: JSON.stringify({ date: today() }) })
+      if (data?.run) setRun(data.run)
+    })()
+  }, [api, kid.id])
+
+  const q = run?.questions[idx]
+  const submit = async () => {
+    if (!q || typed === '' || busy) return
+    setBusy(true)
+    const { data } = await api(`/api/funmath/${run.id}/answer`, { method: 'POST', body: JSON.stringify({ questionId: q.id, answer: Number(typed) }) })
+    setBusy(false); if (!data) return
+    if (data.correct) {
+      sound.correct(); setFeedback({ type: 'correct' }); setTyped('')
+      if (data.runComplete) { sound.fanfare(); if (!reducedMotion) fireConfetti(true, theme.name, reducedMotion); setResult(data); onDone() }
+      else setTimeout(() => { setFeedback(null); setIdx((i) => i + 1) }, 600)
+    } else { sound.wrong(); setFeedback({ type: 'wrong' }); setTyped(''); setTimeout(() => setFeedback(null), 900) }
+  }
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key >= '0' && e.key <= '9') setTyped((t) => (t + e.key).slice(0, 6)); else if (e.key === 'Backspace') setTyped((t) => t.slice(0, -1)); else if (e.key === 'Enter') submit() }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  })
+
+  if (result) return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-8 text-center bg-white shadow-2xl">
+        {reducedMotion ? <div className="text-7xl mb-2">🌟</div> : <div className="text-7xl mb-2 animate-bounce">🎉</div>}
+        <h2 className="text-3xl font-extrabold text-emerald-700 font-display">Perfect run!</h2>
+        {result.colorUnlocked ? (
+          <div className="mt-4">
+            <p className="text-lg font-bold text-slate-700">You unlocked a new color for your avatar!</p>
+            <div className="flex justify-center my-3"><div className="w-14 h-14 rounded-full border-2 border-slate-800" style={{ backgroundColor: AV_COLORS[result.colorUnlocked] }} /></div>
+            <Button onClick={() => onExit('avatar')} className={`w-full h-14 text-lg text-white ${theme.solid} font-display`}>Go to My Avatar</Button>
+            <Button variant="outline" onClick={() => onExit()} className="w-full h-12 mt-2">Done</Button>
+          </div>
+        ) : (
+          <div className="mt-4"><p className="text-lg font-bold text-slate-700">You have every color! 🌈</p><Button onClick={() => onExit()} className={`w-full h-14 text-lg mt-3 text-white ${theme.solid} font-display`}>Done</Button></div>
+        )}
+      </Card>
+    </div>
+  )
+
+  if (!run) return <div className="text-center py-20 text-slate-500 font-display">Getting your questions…</div>
+
+  return (
+    <div className="flex flex-col min-h-[calc(100vh-8rem)]">
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={() => onExit()} aria-label="Exit" className="flex items-center gap-1 h-11 px-3 rounded-full bg-white border border-slate-200 text-slate-600 font-bold shadow-sm"><DoorOpen className="w-5 h-5" /> Exit</button>
+        <div className="flex-1 flex items-center justify-center gap-1 font-extrabold text-indigo-600 font-display"><Puzzle className="w-5 h-5" /> Fun Math</div>
+        <span className="text-sm font-bold text-slate-600 w-16 text-right">{idx + 1} / {run.total}</span>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-center py-2">
+        <Card className="px-6 py-6 bg-white/95 shadow-md max-w-lg w-full">
+          <div className="text-2xl md:text-3xl font-bold text-slate-800 text-center leading-relaxed" style={{ minHeight: '3em' }}>{q?.questionText}</div>
+        </Card>
+        <div className={`mt-4 min-w-[200px] h-20 md:h-24 rounded-2xl border-4 flex items-center justify-center text-4xl md:text-5xl font-extrabold px-6 bg-white ${feedback?.type === 'correct' ? 'border-emerald-500 text-emerald-700' : feedback?.type === 'wrong' ? 'border-amber-500 text-amber-700' : 'border-slate-300 text-slate-800'}`}>{typed || <span className="text-slate-300">?</span>}</div>
+        <div className="h-8 mt-2 flex items-center" role="status" aria-live="polite">
+          {feedback?.type === 'correct' && <div className="flex items-center gap-1 text-emerald-600 font-extrabold"><Check className="w-6 h-6" /> Nice!</div>}
+          {feedback?.type === 'wrong' && <div className="flex items-center gap-1 text-amber-600 font-extrabold"><Heart className="w-6 h-6" /> Almost! Try again</div>}
+        </div>
+      </div>
+      <NumberPad onDigit={(d) => setTyped((t) => (t + d).slice(0, 6))} onClear={() => setTyped('')} onBack={() => setTyped((t) => t.slice(0, -1))} onSubmit={submit} submitDisabled={busy || typed === ''} submitClass={theme.solid} />
     </div>
   )
 }
