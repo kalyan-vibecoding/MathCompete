@@ -1134,8 +1134,9 @@ function FunMath({ kid, theme, sound, reducedMotion, api, onExit, onDone }) {
   const startedRef = useRef(false)
 
   useEffect(() => {
-    if (startedRef.current) return; startedRef.current = true
-    (async () => {
+    if (startedRef.current) return
+    startedRef.current = true
+    ;(async () => {
       const { data } = await api(`/api/kids/${kid.id}/funmath`, { method: 'POST', body: JSON.stringify({ date: today() }) })
       if (data?.run) setRun(data.run)
     })()
