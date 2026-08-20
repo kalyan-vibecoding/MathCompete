@@ -9,9 +9,13 @@
 //   JWT_SECRET         - secret used to sign parent session cookies
 // (NEXT_PUBLIC_GOOGLE_CLIENT_ID is used client-side only, in the browser.)
 //
-// Collections: users, kids, dailySets, reference (existing) + speedSessions (new).
+// Collections: users, kids, dailySets, reference (existing) + speedSessions, funMathBank, funMathRuns.
 // All additions are backward compatible: new fields / new collections only.
 // No stored star/dollar totals anywhere — everything is computed live.
+//
+// funMathBank is seeded (server-side only, via Node fs) from funmath_bank.json in the repo
+// root exactly once, gated by the reference flag { key: 'funmathSeedVersion' } == 'bank-2500-v1'.
+// The file is never read in a browser request path.
 // =============================================================================
 
 import { NextResponse } from 'next/server'
@@ -19,6 +23,8 @@ import { MongoClient } from 'mongodb'
 import { OAuth2Client } from 'google-auth-library'
 import { SignJWT, jwtVerify } from 'jose'
 import { v4 as uuidv4 } from 'uuid'
+import fs from 'fs'
+import path from 'path'
 
 // ----------------------------- constants -------------------------------------
 const MAX_STEP = 4
@@ -78,63 +84,35 @@ async function getDb() {
     }
     cached.seeded = true
   }
-  // Seed funMathBank once (read-only at runtime; the offline AI script can expand it later).
+  // Seed funMathBank from funmath_bank.json (repo root) exactly once, version-gated.
+  // Server-side only (Node fs); never runs in a browser request path.
   if (!cached.fmSeeded) {
-    const fm = db.collection('funMathBank')
-    if ((await fm.countDocuments()) === 0) {
-      const items = buildFunMathBank().map((x) => ({ id: uuidv4(), ...x, createdAt: new Date() }))
+    const ref = db.collection('reference')
+    const flag = await ref.findOne({ key: 'funmathSeedVersion' })
+    if (!flag || flag.value !== 'bank-2500-v1') {
+      const raw = fs.readFileSync(path.join(process.cwd(), 'funmath_bank.json'), 'utf8')
+      const bank = JSON.parse(raw)
+      const items = bank.map((x) => ({
+        id: uuidv4(),
+        grade: x.grade,
+        questionText: x.questionText,
+        numericAnswer: x.numericAnswer,
+        operationTag: x.operationTag,
+        difficultyTier: x.difficultyTier,
+        createdAt: new Date(),
+      }))
+      const fm = db.collection('funMathBank')
+      await fm.deleteMany({})
       if (items.length) await fm.insertMany(items)
+      await ref.updateOne(
+        { key: 'funmathSeedVersion' },
+        { $set: { key: 'funmathSeedVersion', value: 'bank-2500-v1', updatedAt: new Date() } },
+        { upsert: true },
+      )
     }
     cached.fmSeeded = true
   }
   return db
-}
-
-// ---- Fun Math bank: templated, human-readable word problems (whole-number answers) ----
-// Produces >=150 problems/grade with difficultyTier for an easy->hard ramp.
-function buildFunMathBank() {
-  const out = []
-  const seen = new Set()
-  const push = (grade, questionText, numericAnswer, operationTag, difficultyTier) => {
-    if (numericAnswer < 0 || !Number.isInteger(numericAnswer)) return
-    const key = grade + '|' + questionText
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push({ grade, questionText, numericAnswer, operationTag, difficultyTier })
-  }
-  const ri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
-  const cfg = (g) => g === 1 ? { s: 9, mt: 5, mo: 5, dv: 5 }
-    : g === 2 ? { s: 50, mt: 10, mo: 10, dv: 10 }
-    : g === 3 ? { s: 99, mt: 12, mo: 10, dv: 12 }
-    : g === 4 ? { s: 400, mt: 20, mo: 12, dv: 12 }
-    : { s: 999, mt: 20, mo: 20, dv: 20 }
-  const bump = (v, base) => Math.min(5, base + (v > 100 ? 1 : 0))
-
-  for (let g = 1; g <= 5; g++) {
-    const c = cfg(g)
-    let guard = 0
-    while (out.filter((x) => x.grade === g).length < 170 && guard < 6000) {
-      guard++
-      // addition (tier 1)
-      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `A hen laid ${a} eggs and then laid ${b} more. How many eggs in all?`, a + b, 'add', bump(a + b, 1)) }
-      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `There are ${a} red balloons and ${b} blue balloons. How many balloons altogether?`, a + b, 'add', bump(a + b, 1)) }
-      { const a = ri(1, c.s), b = ri(1, c.s); push(g, `You read ${a} pages today and ${b} pages tomorrow. How many pages in total?`, a + b, 'add', bump(a + b, 1)) }
-      // subtraction (tier 2)
-      { const a = ri(2, c.s), b = ri(1, a); push(g, `There were ${a} apples. ${b} were eaten. How many apples are left?`, a - b, 'sub', 2) }
-      { const a = ri(2, c.s), b = ri(1, a); push(g, `A hen laid ${a} eggs and ${b} hatched. How many eggs are left?`, a - b, 'sub', 2) }
-      { const a = ri(2, c.s), b = ri(1, a); push(g, `You had ${a} stickers and gave ${b} away. How many stickers are left?`, a - b, 'sub', 2) }
-      // money change (tier 2/3)
-      { const b = ri(2, c.s), a = ri(b, c.s + 20); push(g, `You buy ${b} dollars of candy and pay with ${a} dollars. How much change do you get back?`, a - b, 'sub', bump(a, 3)) }
-      // multiplication (tier 3)
-      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `Each box has ${b} pencils. There are ${a} boxes. How many pencils in all?`, a * b, 'mul', 3) }
-      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `A spider has ${b} legs. How many legs do ${a} spiders have?`, a * b, 'mul', 3) }
-      { const a = ri(1, c.mo), b = ri(2, c.mt); push(g, `Each basket holds ${b} apples. How many apples are in ${a} baskets?`, a * b, 'mul', 3) }
-      // division (tier 4)
-      { const b = ri(2, c.dv), q = ri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q; push(g, `You share ${a} candies equally among ${b} friends. How many does each friend get?`, q, 'div', 4) }
-      { const b = ri(2, c.dv), q = ri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q; push(g, `There are ${a} cookies packed into bags of ${b}. How many bags are there?`, q, 'div', 4) }
-    }
-  }
-  return out
 }
 
 // ----------------------------- auth helpers ----------------------------------
