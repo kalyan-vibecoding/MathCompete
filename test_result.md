@@ -242,6 +242,82 @@ backend:
         -agent: "testing"
         -comment: "PASSED. Verified: (1) Inserted 8 completed sets across 4 dates (2025-01-10, 01-11, 01-12, 01-14 with gap on 01-13). (2) totalDollars = 16 (8 completed sets * $2). (3) daysPlayed = 4 (distinct dates). (4) streak = 1 (01-14 is isolated due to gap on 01-13). (5) No stored counter fields (totalDollars, daysPlayed, streak) in kids collection - all computed live from dailySets."
 
+
+  - task: "V1.3: orderShapesBank seeding (1000 items, 200 per grade, 100 per strand)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW collection orderShapesBank (read-only, auto-seeded from /app/order_shapes_bank.json). Seeding logic at lines 115-138 of route.js checks reference flag { key: 'orderShapesSeedVersion', value: 'bank-v1' } and seeds orderShapesBank collection exactly once. 1000 items total: 200 per grade (1-5), 100 per strand (order/shapes) per grade. Each doc has {id, grade, strand, questionType, prompt, displayData, correctAnswer, difficultyTier, createdAt}. Multiple-choice docs have options array, numeric-entry docs have no options. Idempotency enforced via reference flag gate."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Verified orderShapesBank collection has exactly 1000 documents. Exactly 200 per grade (Grade 1: 200, Grade 2: 200, Grade 3: 200, Grade 4: 200, Grade 5: 200). Exactly 100 per strand per grade (each grade has 100 order + 100 shapes). All required fields present (id, grade, strand, questionType, prompt, displayData, correctAnswer, difficultyTier, createdAt). Multiple-choice questions have options array, numeric-entry questions have no options field. Reference flag exists with value 'bank-v1'. Seeding working correctly."
+
+  - task: "V1.3: orderShapesBank idempotency (no wipe/reseed/duplicate)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Reference flag gate prevents re-seeding. Multiple DB access calls (GET /me, GET /kids) should NOT change the bank count or IDs. Verify: (1) Initial count 1000, final count 1000 after multiple calls. (2) All IDs remain identical (no delete/reinsert). (3) Sentinel ID preserved across reconnects."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Captured 1000 unique IDs initially. Made 4 authenticated API calls (GET /me x3, GET /kids x1) to force getDb() reconnect logic. Final count: 1000 documents (unchanged). All 1000 IDs remain identical (no delete/reinsert). Sentinel ID preserved across reconnects. Reference flag gate prevents re-seeding. NO duplication or reset occurred. Idempotency verified."
+
+  - task: "V1.3: POST /api/kids/:id/ordershapes (10 questions, grade-specific, mixed strands)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "NEW route POST /api/kids/:id/ordershapes {date} returns {questions: [exactly 10]}. All 10 questions from kid's grade, mixed strands (both 'order' and 'shapes' present across multiple calls), ordered by difficultyTier ascending. Each question includes {id, strand, questionType, prompt, displayData, correctAnswer}. MC questions include options array containing correctAnswer. correctAnswer IS intentionally included (unscored mode, same trust as Just Practice). Random selection varies run to run."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Created Grade 3 kid, called POST /api/kids/:id/ordershapes. Returned exactly 10 questions with unique IDs. All 10 questions belong to grade 3 (verified against orderShapesBank). Both 'order' and 'shapes' strands present (mixed). Questions ordered by difficultyTier ascending [3,3,3,3,3,3,3,3,3,3]. All required fields present (id, strand, questionType, prompt, displayData, correctAnswer). correctAnswer IS intentionally included. MC questions (9 found) include options containing correctAnswer. Second call returned different question set (0 common IDs - random selection varies). Grade 1 kid: 10 questions all grade 1. Order and Shapes route working correctly."
+
+  - task: "V1.3: Security/Ownership (Order and Shapes)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /api/kids/:id/ordershapes requires valid session (401 without). Parent B cannot access Parent A's kid (401/404). correctAnswer IS included in response (intentionally, since nothing is scored - same trust model as Just Practice)."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. POST /api/kids/:id/ordershapes without session returns 401. Created Parent B, attempted to access Parent A's kid - returns 404 (cannot access another parent's kid). Security and ownership verified."
+
+  - task: "V1.3: Regression (existing features unaffected)"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "V1.3 additions are backward-compatible. Existing features must still work: unauthenticated routes -> 401, Fun Math start run returns 20 questions WITHOUT numericAnswer, perfect run unlocks color, normal set completion awards 2 stars, funMathBank still 2500 docs."
+        -working: true
+        -agent: "testing"
+        -comment: "PASSED. Unauthenticated GET /kids returns 401. Fun Math start run returns 20 questions, NO numericAnswer leaked to client. Perfect Fun Math run unlocks color (grape). Normal set completion awards exactly 2 stars. funMathBank still has 2500 documents. All existing features working correctly, no regressions."
+
 frontend:
   - task: "ENH: Speed Math mode (10 problems / 3 min / 3 per day, server-timed, scoring)"
     implemented: true
@@ -522,3 +598,7 @@ agent_communication:
     -message: "BUG FIX: Just Practice Division - Grade 1 divisor variety + Grade 2-5 range. Previously Grade 1 division generated limited/broken set (stuck with mostly divisor 2, too few unique problems). Fixed client-side generator in app/page.js lines 1022-1026. Now: Grade 1 divisors span {2,3,4,5}, Grades 2-5 divisors span {2..10}, all divisions divide evenly (whole-number answers), Add/Sub/Mul unchanged. Please verify: (1) Grade 1 division: collect 20+ problems, divisor set includes {2,3,4,5}, all divide evenly. (2) Grade 3 division: collect 20+ problems, divisor set spans wide range within {2..10}, all divide evenly. (3) Regression: Add/Sub/Mul still render normally. (4) No console errors."
     -agent: "testing"
     -message: "DIVISION BUG FIX VERIFICATION COMPLETE ✅. ALL TESTS PASSED. Comprehensive testing with minted JWT session cookie. Created test parent (jp-parent) and two kids (Grade 1: Gina, Grade 3: Theo) in MongoDB. Test results: (1) ✅ GRADE 1 DIVISION: Collected 30 problems across 3 page generations. Distinct divisors: [2, 3, 4, 5] - ALL EXPECTED DIVISORS PRESENT! Examples: 4÷2=2, 9÷3=3, 32÷4=8, 10÷5=2, 14÷2=7, 36÷4=9, 27÷3=9, 15÷3=5, 18÷2=9, 16÷4=4, 35÷5=7, 40÷5=8, 25÷5=5, 28÷4=7, 30÷5=6. All 30 problems divide evenly (no remainders). Divisor variety confirmed - no longer stuck with only divisor 2. (2) ✅ GRADE 3 DIVISION: Collected 30 problems across 3 page generations. Distinct divisors: [2, 3, 4, 5, 6, 7, 8, 9, 10] - FULL RANGE 2-10 PRESENT! Examples: 126÷9=14, 81÷9=9, 28÷4=7, 70÷10=7, 120÷10=12, 16÷8=2, 56÷4=14, 10÷2=5, 25÷5=5, 150÷10=15, 24÷6=4, 72÷8=9, 21÷7=3, 42÷7=6, 18÷6=3, 84÷6=14, 40÷10=4, 45÷3=15. All 30 problems divide evenly. Wide divisor range confirmed (all 9 divisors from 2-10 appeared). (3) ✅ REGRESSION TESTS: Addition renders correctly (10 problems with + operator). Subtraction renders correctly (10 problems with − operator). Multiplication table picker displays correctly (20 tables in grid). All existing Just Practice operations unchanged. (4) ✅ NO CONSOLE ERRORS: Zero page errors, zero console errors throughout testing. BUG FIX SUCCESSFUL. Grade 1 division now generates varied problems with all divisors {2,3,4,5}. Grades 2-5 division spans full range {2..10}. All divisions divide evenly. Existing operations unaffected."
+    -agent: "main"
+    -message: "V1.3: Order and Shapes backend additions. NEW collection orderShapesBank (auto-seeded from /app/order_shapes_bank.json, 1000 items = 200 per grade 1-5, 100 per strand order/shapes). NEW route POST /api/kids/:id/ordershapes returns 10 questions. Seeding logic at lines 115-138 checks reference flag {key:'orderShapesSeedVersion'}=='bank-v1'. Please TEST BACKEND ONLY: (1) SEEDING: orderShapesBank must have exactly 1000 docs = 200 per grade (100 strand='order' + 100 strand='shapes') for grades 1..5. Each doc has {id (uuid), grade, strand, questionType, prompt, displayData, correctAnswer, difficultyTier, createdAt}; multiple-choice docs also have options (array) while numeric-entry docs have no options. Reference collection has {key:'orderShapesSeedVersion', value:'bank-v1'}. (2) IDEMPOTENCY: Capture the current 1000 ids. Hit authenticated endpoints (GET /api/me, GET /api/kids?date=today) several times to force getDb() reconnect logic; because the flag == 'bank-v1', orderShapesBank must remain exactly 1000 with the SAME ids (no wipe/reseed/duplicate). (3) ORDER AND SHAPES ROUTE: Create a Grade 3 kid. POST /api/kids/:id/ordershapes {date} -> returns { questions: [exactly 10] }. Verify: all 10 have unique ids, all belong to grade 3 (cross-check against orderShapesBank grade), the set MIXES both strands (contains at least one 'order' and at least one 'shapes' across a few calls), ordered by difficultyTier ascending, and each question includes prompt, displayData, correctAnswer (correctAnswer IS intentionally included here since nothing is scored). MC questions include options containing the correctAnswer. Call it twice; the two question-id sets should differ (random selection varies run to run). Repeat for a Grade 1 kid: 10 questions all grade 1. (4) SECURITY/OWNERSHIP: POST /api/kids/:id/ordershapes without a session -> 401. Parent B calling POST /api/kids/<parentA_kid_id>/ordershapes -> 404/401 (cannot access another parent's kid). (5) REGRESSION (must still pass): Fun Math endpoints unchanged and still work (start run returns 20 questions WITHOUT numericAnswer; perfect run still unlocks a color); funMathBank still 2500; unauthenticated routes 401; normal set / speed / stars unaffected."
+    -agent: "testing"
+    -message: "V1.3 ORDER AND SHAPES TESTING COMPLETE ✅. ALL 5 TESTS PASSED (100% success rate). Created comprehensive test suite (backend_test_ordershapes.py) covering all V1.3 additions. Results: (1) ✅ SEEDING: orderShapesBank has exactly 1000 documents. Exactly 200 per grade (Grade 1: 200, Grade 2: 200, Grade 3: 200, Grade 4: 200, Grade 5: 200). Exactly 100 per strand per grade (each grade has 100 order + 100 shapes). All required fields present (id, grade, strand, questionType, prompt, displayData, correctAnswer, difficultyTier, createdAt). Multiple-choice questions have options array, numeric-entry questions have no options field. Reference flag exists with value 'bank-v1'. (2) ✅ IDEMPOTENCY: Captured 1000 unique IDs initially. Made 4 authenticated API calls (GET /me x3, GET /kids x1) to force getDb() reconnect logic. Final count: 1000 documents (unchanged). All 1000 IDs remain identical (no delete/reinsert). Sentinel ID preserved across reconnects. Reference flag gate prevents re-seeding. NO duplication or reset occurred. (3) ✅ ORDER AND SHAPES ROUTE: Created Grade 3 kid, called POST /api/kids/:id/ordershapes. Returned exactly 10 questions with unique IDs. All 10 questions belong to grade 3 (verified against orderShapesBank). Both 'order' and 'shapes' strands present (mixed). Questions ordered by difficultyTier ascending [3,3,3,3,3,3,3,3,3,3]. All required fields present (id, strand, questionType, prompt, displayData, correctAnswer). correctAnswer IS intentionally included. MC questions (9 found) include options containing correctAnswer. Second call returned different question set (0 common IDs - random selection varies). Grade 1 kid: 10 questions all grade 1. (4) ✅ SECURITY/OWNERSHIP: POST /api/kids/:id/ordershapes without session returns 401. Parent B cannot access Parent A's kid (returns 404). (5) ✅ REGRESSION: Unauthenticated GET /kids returns 401. Fun Math start run returns 20 questions, NO numericAnswer leaked to client. Perfect Fun Math run unlocks color (grape). Normal set completion awards exactly 2 stars. funMathBank still has 2500 documents. All existing features working correctly, no regressions. NO MAJOR ISSUES FOUND. V1.3 Order and Shapes backend is production-ready."
