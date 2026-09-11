@@ -233,7 +233,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <ThemeBg theme={activeKid?.theme} active={mode !== null} reduced={reducedMotion} />
+      <ThemeBg theme={activeKid?.theme} active={mode !== null} reduced={reducedMotion} brand={!activeKid} />
 
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -329,7 +329,20 @@ export default function App() {
 }
 
 // ------------------------------- Theme background ----------------------------
-function ThemeBg({ theme, active, reduced }) {
+function ThemeBg({ theme, active, reduced, brand }) {
+  if (brand) {
+    // Brand (indigo/blue) background for pre-theme screens like the player picker.
+    return (
+      <div aria-hidden className="fixed inset-0 -z-10 bg-gradient-to-br from-indigo-600 via-indigo-500 to-blue-600">
+        <div className="absolute inset-0 opacity-[0.12]">
+          <div className="w-full h-full grid grid-cols-4 sm:grid-cols-6 gap-8 p-6 text-white select-none overflow-hidden">
+            {Array.from({ length: 30 }).map((_, i) => <Sparkles key={i} className="w-10 h-10 md:w-12 md:h-12" />)}
+          </div>
+        </div>
+        <div className="absolute inset-0 bg-white/70" />
+      </div>
+    )
+  }
   const t = themeOf(theme)
   return (
     <div aria-hidden className={`fixed inset-0 -z-10 bg-gradient-to-br ${t.grad}`}>
@@ -348,7 +361,9 @@ function SignIn({ error }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-indigo-100 to-emerald-100 px-4">
       <div className="text-center mb-8">
-        <div className="text-6xl mb-3">🧮</div>
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-indigo-600 text-white shadow-lg mb-3">
+          <Sparkles className="w-11 h-11" />
+        </div>
         <h1 className="text-4xl md:text-5xl font-extrabold text-indigo-800 font-display">MathCompete</h1>
         <p className="text-lg text-slate-600 mt-2 max-w-md">A daily math game for kids in grades 1–5. Parents sign in to set up players.</p>
       </div>
@@ -482,8 +497,8 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
           </button>
           <div>
             <h2 className="text-3xl font-extrabold text-slate-800 font-display">Hi {kid.firstName}! 👋</h2>
-            <div className={`flex items-center gap-2 mt-1 font-bold ${theme.text}`}>
-              <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {kid.levelLabel}
+            <div className={`flex items-center gap-1.5 mt-1 font-bold ${theme.text}`}>
+              <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {String(kid.levelLabel).replace(/[^A-Za-z ].*$/, '').trim()}
             </div>
           </div>
         </div>
@@ -493,11 +508,11 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
         </button>
       </div>
 
-      {/* Total stars — white panel for guaranteed AA contrast, themed accent icon */}
-      <Card className={`p-6 bg-white shadow-lg border-t-4`} style={{ borderTopColor: theme.ring }}>
+      {/* Total stars — flat white panel for guaranteed AA contrast, themed accent icon */}
+      <Card className="p-6 bg-white shadow-lg">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-slate-500 font-semibold">Total stars</div>
+            <div className="text-slate-600 font-semibold">Total stars</div>
             <div className="text-5xl font-extrabold flex items-center gap-2 text-slate-800 font-display">
               <Star className="w-10 h-10 fill-amber-400 text-amber-400" /> {fmtStars(kid.totalStars)}
             </div>
@@ -1019,7 +1034,10 @@ function genPractice(op, grade) {
   const c = P_MAX[grade] || P_MAX[1]
   if (op === 'add') { const a = pri(1, c.s), b = pri(1, c.s); return { display: `${a} + ${b} =`, answer: a + b } }
   if (op === 'sub') { const a = pri(2, c.s), b = pri(1, a); return { display: `${a} - ${b} =`, answer: a - b } }
-  const b = pri(2, c.dv), q = pri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q
+  // division (whole-number only): divisor 2-5 for grade 1, 2-10 for grades 2-5
+  const dMax = grade === 1 ? 5 : 10
+  const qMax = grade === 1 ? 9 : grade === 2 ? 12 : grade === 3 ? 15 : 20
+  const b = pri(2, dMax), q = pri(2, qMax); const a = b * q
   return { display: `${a} \u00f7 ${b} =`, answer: q }
 }
 function genPage(op, grade, prevSet) {
@@ -1071,7 +1089,7 @@ function PracticeSection({ grade, theme, sound, onExit }) {
   if (!op) return (
     <div>
       <Header title="Just Practice" />
-      <p className="text-center text-slate-600 mb-6">Practice as much as you like. No stars, no timer.</p>
+      <p className="text-center text-slate-700 mb-6">Practice as much as you like. No stars, no timer.</p>
       <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
         {[['add', 'Addition', <Plus key="a" className="w-8 h-8" />], ['sub', 'Subtraction', <Minus key="s" className="w-8 h-8" />], ['div', 'Division', <Divide key="d" className="w-8 h-8" />], ['mul', 'Multiplication', <XIcon key="m" className="w-8 h-8" />]].map(([k, label, icon]) => (
           <button key={k} onClick={() => startOp(k)} className={`${theme.solid} text-white rounded-2xl p-6 flex flex-col items-center gap-2 shadow-lg active:scale-95 min-h-[110px] font-display`}>
