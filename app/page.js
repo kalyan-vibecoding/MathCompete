@@ -106,6 +106,7 @@ export default function App() {
   const [speedResult, setSpeedResult] = useState(null)
   const [showExplainer, setShowExplainer] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
+  const [funSub, setFunSub] = useState(null) // null | 'read' | 'ordershapes'
 
   const [busy, setBusy] = useState(false)
   const soundRef = useRef(true)
@@ -182,7 +183,7 @@ export default function App() {
 
   // ------------------------- navigation helpers -----------------------------
   const selectKid = (kid) => { setActiveKid(kid); setMode(null); setSet(null); setSpeed(null); setCompletion(null); setSpeedResult(null) }
-  const goHome = async () => { setMode(null); setSet(null); setSpeed(null); setCompletion(null); setSpeedResult(null); await refreshActiveKid() }
+  const goHome = async () => { setMode(null); setSet(null); setSpeed(null); setCompletion(null); setSpeedResult(null); setFunSub(null); await refreshActiveKid() }
 
   // ------------------------- NORMAL set --------------------------------------
   const startSet = async () => {
@@ -233,7 +234,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <ThemeBg theme={activeKid?.theme} active={mode !== null} reduced={reducedMotion} />
+      <ThemeBg theme={activeKid?.theme} active={mode !== null} reduced={reducedMotion} brand={!activeKid} />
 
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
@@ -265,7 +266,7 @@ export default function App() {
             }}
             onGradeChange={async (grade) => { await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ grade }) }); refreshActiveKid() }}
             onThemeChange={async (th) => { setActiveKid((k) => ({ ...k, theme: th })); await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ theme: th }) }); refreshActiveKid() }}
-            onPractice={() => setMode('practice')} onFunMath={() => setMode('funmath')}
+            onPractice={() => setMode('practice')} onFunMath={() => { setFunSub(null); setMode('funmath') }}
             onOpenAvatar={() => setAvatarOpen(true)}
           />
         )}
@@ -274,10 +275,18 @@ export default function App() {
           <PracticeSection grade={activeKid.grade} theme={theme} sound={sound} onExit={goHome} />
         )}
 
-        {activeKid && mode === 'funmath' && (
+        {activeKid && mode === 'funmath' && !funSub && (
+          <FunMathPicker theme={theme} onPick={setFunSub} onExit={goHome} />
+        )}
+
+        {activeKid && mode === 'funmath' && funSub === 'read' && (
           <FunMath kid={activeKid} theme={theme} sound={sound} reducedMotion={reducedMotion} api={api}
             onDone={refreshActiveKid}
             onExit={async (goAvatar) => { await goHome(); if (goAvatar === 'avatar') setAvatarOpen(true) }} />
+        )}
+
+        {activeKid && mode === 'funmath' && funSub === 'ordershapes' && (
+          <OrderShapes kid={activeKid} theme={theme} sound={sound} api={api} onExit={goHome} />
         )}
 
         {activeKid && mode === 'normal' && set && (
@@ -329,7 +338,20 @@ export default function App() {
 }
 
 // ------------------------------- Theme background ----------------------------
-function ThemeBg({ theme, active, reduced }) {
+function ThemeBg({ theme, active, reduced, brand }) {
+  if (brand) {
+    // Brand (indigo/blue) background for pre-theme screens like the player picker.
+    return (
+      <div aria-hidden className="fixed inset-0 -z-10 bg-gradient-to-br from-indigo-600 via-indigo-500 to-blue-600">
+        <div className="absolute inset-0 opacity-[0.12]">
+          <div className="w-full h-full grid grid-cols-4 sm:grid-cols-6 gap-8 p-6 text-white select-none overflow-hidden">
+            {Array.from({ length: 30 }).map((_, i) => <Sparkles key={i} className="w-10 h-10 md:w-12 md:h-12" />)}
+          </div>
+        </div>
+        <div className="absolute inset-0 bg-white/70" />
+      </div>
+    )
+  }
   const t = themeOf(theme)
   return (
     <div aria-hidden className={`fixed inset-0 -z-10 bg-gradient-to-br ${t.grad}`}>
@@ -348,7 +370,9 @@ function SignIn({ error }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-indigo-100 to-emerald-100 px-4">
       <div className="text-center mb-8">
-        <div className="text-6xl mb-3">🧮</div>
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-indigo-600 text-white shadow-lg mb-3">
+          <Sparkles className="w-11 h-11" />
+        </div>
         <h1 className="text-4xl md:text-5xl font-extrabold text-indigo-800 font-display">MathCompete</h1>
         <p className="text-lg text-slate-600 mt-2 max-w-md">A daily math game for kids in grades 1–5. Parents sign in to set up players.</p>
       </div>
@@ -482,8 +506,8 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
           </button>
           <div>
             <h2 className="text-3xl font-extrabold text-slate-800 font-display">Hi {kid.firstName}! 👋</h2>
-            <div className={`flex items-center gap-2 mt-1 font-bold ${theme.text}`}>
-              <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {kid.levelLabel}
+            <div className={`flex items-center gap-1.5 mt-1 font-bold ${theme.text}`}>
+              <Star className="w-5 h-5 fill-amber-400 text-amber-400" /> {String(kid.levelLabel).replace(/[^A-Za-z ].*$/, '').trim()}
             </div>
           </div>
         </div>
@@ -493,11 +517,11 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
         </button>
       </div>
 
-      {/* Total stars — white panel for guaranteed AA contrast, themed accent icon */}
-      <Card className={`p-6 bg-white shadow-lg border-t-4`} style={{ borderTopColor: theme.ring }}>
+      {/* Total stars — flat white panel for guaranteed AA contrast, themed accent icon */}
+      <Card className="p-6 bg-white shadow-lg">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-slate-500 font-semibold">Total stars</div>
+            <div className="text-slate-600 font-semibold">Total stars</div>
             <div className="text-5xl font-extrabold flex items-center gap-2 text-slate-800 font-display">
               <Star className="w-10 h-10 fill-amber-400 text-amber-400" /> {fmtStars(kid.totalStars)}
             </div>
@@ -1019,7 +1043,10 @@ function genPractice(op, grade) {
   const c = P_MAX[grade] || P_MAX[1]
   if (op === 'add') { const a = pri(1, c.s), b = pri(1, c.s); return { display: `${a} + ${b} =`, answer: a + b } }
   if (op === 'sub') { const a = pri(2, c.s), b = pri(1, a); return { display: `${a} - ${b} =`, answer: a - b } }
-  const b = pri(2, c.dv), q = pri(2, Math.max(2, Math.floor(c.s / c.dv))); const a = b * q
+  // division (whole-number only): divisor 2-5 for grade 1, 2-10 for grades 2-5
+  const dMax = grade === 1 ? 5 : 10
+  const qMax = grade === 1 ? 9 : grade === 2 ? 12 : grade === 3 ? 15 : 20
+  const b = pri(2, dMax), q = pri(2, qMax); const a = b * q
   return { display: `${a} \u00f7 ${b} =`, answer: q }
 }
 function genPage(op, grade, prevSet) {
@@ -1071,7 +1098,7 @@ function PracticeSection({ grade, theme, sound, onExit }) {
   if (!op) return (
     <div>
       <Header title="Just Practice" />
-      <p className="text-center text-slate-600 mb-6">Practice as much as you like. No stars, no timer.</p>
+      <p className="text-center text-slate-700 mb-6">Practice as much as you like. No stars, no timer.</p>
       <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
         {[['add', 'Addition', <Plus key="a" className="w-8 h-8" />], ['sub', 'Subtraction', <Minus key="s" className="w-8 h-8" />], ['div', 'Division', <Divide key="d" className="w-8 h-8" />], ['mul', 'Multiplication', <XIcon key="m" className="w-8 h-8" />]].map(([k, label, icon]) => (
           <button key={k} onClick={() => startOp(k)} className={`${theme.solid} text-white rounded-2xl p-6 flex flex-col items-center gap-2 shadow-lg active:scale-95 min-h-[110px] font-display`}>
@@ -1199,6 +1226,185 @@ function FunMath({ kid, theme, sound, reducedMotion, api, onExit, onDone }) {
         </div>
       </div>
       <NumberPad onDigit={(d) => setTyped((t) => (t + d).slice(0, 6))} onClear={() => setTyped('')} onBack={() => setTyped((t) => t.slice(0, -1))} onSubmit={submit} submitDisabled={busy || typed === ''} submitClass={theme.solid} />
+    </div>
+  )
+}
+
+// ============================ V1.3: Fun Math sub-section picker ==============
+function FunMathPicker({ theme, onPick, onExit }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onExit} aria-label="Exit" className="flex items-center gap-1 h-11 px-3 rounded-full bg-white border border-slate-200 text-slate-600 font-bold shadow-sm"><ArrowLeft className="w-5 h-5" /> Back</button>
+        <h2 className="text-2xl font-extrabold text-slate-800 font-display flex-1 text-center pr-16">Fun Math</h2>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
+        <button onClick={() => onPick('read')} className="rounded-2xl p-6 bg-white/95 border-2 border-slate-200 hover:border-fuchsia-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[140px]">
+          <Puzzle className="w-9 h-9 text-fuchsia-600" />
+          <span className="text-xl font-extrabold text-slate-800 font-display">Read and Think</span>
+          <span className="text-xs text-slate-600 text-center">20 word problems · win an avatar color</span>
+        </button>
+        <button onClick={() => onPick('ordershapes')} className="rounded-2xl p-6 bg-white/95 border-2 border-slate-200 hover:border-indigo-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[140px]">
+          <Sparkles className="w-9 h-9 text-indigo-600" />
+          <span className="text-xl font-extrabold text-slate-800 font-display">Order and Shapes</span>
+          <span className="text-xs text-slate-600 text-center">10 questions · order numbers & shapes</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ============================ V1.3: inline SVG shape renderer ================
+const SHAPE_ICON = { star: '★', heart: '♥', circle: '●', apple: '🍎', ball: '⚽' }
+const OS_FILL = { sky: '#3b82f6', mint: '#10b981', grape: '#8b5cf6', sunset: '#f97316', bubblegum: '#ec4899' }
+function polyPoints(cx, cy, r, n, rot = -Math.PI / 2) {
+  return Array.from({ length: n }, (_, i) => { const a = rot + (i * 2 * Math.PI) / n; return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}` }).join(' ')
+}
+function Shape2D({ shape, fill }) {
+  const s = { fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }
+  if (shape === 'circle') return <circle cx="60" cy="60" r="42" style={s} />
+  if (shape === 'square') return <rect x="20" y="20" width="80" height="80" rx="4" style={s} />
+  if (shape === 'rectangle') return <rect x="12" y="32" width="96" height="56" rx="4" style={s} />
+  if (shape === 'triangle') return <polygon points="60,16 104,100 16,100" style={s} />
+  if (shape === 'pentagon') return <polygon points={polyPoints(60, 62, 44, 5)} style={s} />
+  if (shape === 'hexagon') return <polygon points={polyPoints(60, 60, 44, 6, 0)} style={s} />
+  if (shape === 'trapezoid') return <polygon points="30,32 90,32 108,92 12,92" style={s} />
+  if (shape === 'rhombus') return <polygon points="60,14 106,60 60,106 14,60" style={s} />
+  return <rect x="20" y="20" width="80" height="80" style={s} />
+}
+function Shape3D({ shape, fill }) {
+  const s = { fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }
+  const dk = { fill: '#00000030', stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }
+  if (shape === 'sphere') return <g><circle cx="60" cy="60" r="42" style={s} /><ellipse cx="48" cy="46" rx="14" ry="9" fill="#ffffff66" /></g>
+  if (shape === 'cylinder') return <g><rect x="26" y="30" width="68" height="60" style={s} /><ellipse cx="60" cy="30" rx="34" ry="11" style={s} /><ellipse cx="60" cy="90" rx="34" ry="11" style={dk} /></g>
+  if (shape === 'cone') return <g><ellipse cx="60" cy="94" rx="36" ry="11" style={dk} /><polygon points="60,14 96,94 24,94" style={s} /></g>
+  if (shape === 'pyramid') return <g><polygon points="60,16 104,96 16,96" style={s} /><polygon points="60,16 104,96 60,80" style={dk} /></g>
+  // cube / rectangular prism
+  const w = shape === 'rectangular prism' ? 64 : 52
+  return <g><rect x="26" y="40" width={w} height="52" style={s} /><polygon points={`26,40 ${26 + 18},22 ${26 + 18 + w},22 ${26 + w},40`} style={dk} /><polygon points={`${26 + w},40 ${26 + w + 18},22 ${26 + w + 18},74 ${26 + w},92`} style={dk} /></g>
+}
+function ShapeSVG({ dd }) {
+  if (!dd) return null
+  const fill = OS_FILL[dd.color] || '#3b82f6'
+  const is3d = ['cube', 'rectangular prism', 'cylinder', 'cone', 'sphere', 'pyramid'].includes(dd.shape)
+  if (dd.type === 'row') {
+    const g = SHAPE_ICON[dd.icon] || '★'
+    return (
+      <div className="flex flex-wrap justify-center gap-2 max-w-md">
+        {Array.from({ length: dd.count }).map((_, i) => (
+          <div key={i} className={`text-4xl md:text-5xl ${i === dd.markIndex ? 'scale-110' : 'opacity-60'}`}>
+            <span style={{ color: i === dd.markIndex ? '#f59e0b' : '#64748b' }}>{g}</span>
+            {i === dd.markIndex && <div className="text-xs font-bold text-amber-600 text-center">↑</div>}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (dd.type === 'sequence') return <div className="flex gap-2">{dd.items.map((n, i) => <div key={i} className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-extrabold ${n === null ? 'bg-amber-100 border-2 border-dashed border-amber-400 text-amber-500' : 'bg-white border border-slate-300 text-slate-800'}`}>{n === null ? '?' : n}</div>)}</div>
+  if (dd.type === 'numbers') return <div className="flex flex-wrap gap-2 justify-center">{dd.numbers.map((n, i) => <div key={i} className="px-4 h-12 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center text-xl font-extrabold text-indigo-800">{n}</div>)}</div>
+  if (dd.type === 'fractions') return <div className="flex flex-wrap gap-2 justify-center">{dd.fractions.map((f, i) => <div key={i} className="px-4 h-12 rounded-xl bg-fuchsia-50 border border-fuchsia-200 flex items-center text-xl font-extrabold text-fuchsia-800">{f}</div>)}</div>
+  if (dd.type === 'compare') return <div className="text-4xl font-extrabold text-slate-800 flex items-center gap-3">{dd.a}<span className="text-slate-400">?</span>{dd.b}</div>
+  if (dd.type === 'rectangle') return <svg width="180" height="120" viewBox="0 0 180 120"><rect x="20" y="20" width="140" height="80" style={{ fill, stroke: '#1f2937', strokeWidth: 3 }} /><text x="90" y="14" textAnchor="middle" fontSize="14" fill="#334155" fontWeight="700">{dd.width} {dd.unit}</text><text x="176" y="64" textAnchor="middle" fontSize="14" fill="#334155" fontWeight="700" transform="rotate(90 176 64)">{dd.height} {dd.unit}</text></svg>
+  if (dd.type === 'prism') return <div className="flex flex-col items-center"><svg width="150" height="130" viewBox="0 0 150 130"><Shape3D shape="rectangular prism" fill={fill} /></svg><div className="text-sm font-bold text-slate-600">{dd.l} × {dd.w} × {dd.h} {dd.unit}</div></div>
+  if (dd.type === 'lshape') return <svg width="150" height="130" viewBox="0 0 150 130"><path d="M20,20 h100 v50 h-50 v40 h-50 Z" style={{ fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }} /></svg>
+  if (dd.type === 'partition') {
+    const parts = dd.parts, shaded = dd.shaded || 0
+    return <svg width="180" height="90" viewBox="0 0 180 90">{Array.from({ length: parts }).map((_, i) => <rect key={i} x={10 + i * (160 / parts)} y="15" width={160 / parts} height="60" style={{ fill: i < shaded ? fill : '#ffffff', stroke: '#1f2937', strokeWidth: 2 }} />)}</svg>
+  }
+  if (dd.type === 'shape') return <svg width="130" height="130" viewBox="0 0 120 120">{is3d ? <Shape3D shape={dd.shape} fill={fill} /> : <Shape2D shape={dd.shape} fill={fill} />}</svg>
+  return null
+}
+
+// ============================ V1.3: Order and Shapes player ==================
+function OrderShapes({ kid, theme, sound, api, onExit }) {
+  const [qs, setQs] = useState(null)
+  const [idx, setIdx] = useState(0)
+  const [typed, setTyped] = useState('')
+  const [feedback, setFeedback] = useState(null)
+  const [done, setDone] = useState(false)
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+    ;(async () => {
+      const { data } = await api(`/api/kids/${kid.id}/ordershapes`, { method: 'POST', body: JSON.stringify({ date: today() }) })
+      if (data?.questions) setQs(data.questions)
+    })()
+  }, [api, kid.id])
+
+  const q = qs?.[idx]
+  const isMC = q && Array.isArray(q.options) && q.options.length > 0
+
+  const advance = () => {
+    setTyped(''); setFeedback(null)
+    if (idx + 1 >= qs.length) { sound.fanfare(); setDone(true) }
+    else setIdx((i) => i + 1)
+  }
+  const check = (val) => {
+    const ok = String(val).trim() === String(q.correctAnswer).trim()
+    if (ok) { sound.correct(); setFeedback({ type: 'correct' }); setTimeout(advance, 650) }
+    else { sound.wrong(); setFeedback({ type: 'wrong' }); setTimeout(() => setFeedback(null), 800) }
+  }
+
+  useEffect(() => {
+    if (isMC) return
+    const onKey = (e) => { if (e.key >= '0' && e.key <= '9') setTyped((t) => (t + e.key).slice(0, 7)); else if (e.key === 'Backspace') setTyped((t) => t.slice(0, -1)); else if (e.key === 'Enter' && typed !== '') check(typed) }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  })
+
+  if (done) return (
+    <div className="text-center py-10">
+      <div className="text-6xl mb-3">🌟</div>
+      <h2 className="text-3xl font-extrabold text-emerald-700 font-display">Nice work!</h2>
+      <p className="text-slate-600 mt-2">You finished 10 Order and Shapes questions.</p>
+      <div className="flex gap-2 justify-center mt-5">
+        <Button onClick={() => { setQs(null); setIdx(0); setDone(false); startedRef.current = false; (async () => { const { data } = await api(`/api/kids/${kid.id}/ordershapes`, { method: 'POST', body: JSON.stringify({ date: today() }) }); if (data?.questions) { setQs(data.questions); startedRef.current = true } })() }} className={`h-14 px-6 text-lg text-white ${theme.solid} font-display`}>Play again</Button>
+        <Button variant="outline" onClick={onExit} className="h-14 px-6 text-lg">Done</Button>
+      </div>
+    </div>
+  )
+
+  if (!qs) return <div className="text-center py-20 text-slate-500 font-display">Getting your questions…</div>
+
+  return (
+    <div className="flex flex-col min-h-[calc(100vh-8rem)]">
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={onExit} aria-label="Exit" className="flex items-center gap-1 h-11 px-3 rounded-full bg-white border border-slate-200 text-slate-600 font-bold shadow-sm"><DoorOpen className="w-5 h-5" /> Exit</button>
+        <div className="flex-1 flex items-center justify-center gap-1 font-extrabold text-indigo-600 font-display"><Sparkles className="w-5 h-5" /> Order and Shapes</div>
+        <span className="text-sm font-bold text-slate-600 w-14 text-right">{idx + 1} / 10</span>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center py-2">
+        <Card className="px-6 py-5 bg-white/95 shadow-md max-w-lg w-full text-center">
+          <div className="text-xl md:text-2xl font-bold text-slate-800 mb-4">{q?.prompt}</div>
+          <div className="flex justify-center min-h-[80px] items-center"><ShapeSVG dd={q?.displayData} /></div>
+        </Card>
+
+        {isMC ? (
+          <div className="mt-5 w-full max-w-md grid grid-cols-1 gap-3">
+            {q.options.map((opt) => (
+              <button key={opt} onClick={() => check(opt)}
+                className={`min-h-[56px] rounded-2xl border-2 text-xl font-extrabold px-4 py-3 active:scale-95 font-display bg-white ${feedback?.type === 'correct' && String(opt) === String(q.correctAnswer) ? 'border-emerald-500 text-emerald-700' : 'border-slate-300 text-slate-800 hover:border-indigo-400'}`}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className={`mt-4 min-w-[180px] h-20 rounded-2xl border-4 flex items-center justify-center text-4xl font-extrabold px-6 bg-white ${feedback?.type === 'correct' ? 'border-emerald-500 text-emerald-700' : feedback?.type === 'wrong' ? 'border-amber-500 text-amber-700' : 'border-slate-300 text-slate-800'}`}>{typed || <span className="text-slate-300">?</span>}</div>
+          </>
+        )}
+
+        <div className="h-8 mt-2 flex items-center" role="status" aria-live="polite">
+          {feedback?.type === 'correct' && <div className="flex items-center gap-1 text-emerald-600 font-extrabold"><Check className="w-6 h-6" /> Yes!</div>}
+          {feedback?.type === 'wrong' && <div className="flex items-center gap-1 text-amber-600 font-extrabold"><Heart className="w-6 h-6" /> Try again</div>}
+        </div>
+      </div>
+
+      {!isMC && (
+        <NumberPad onDigit={(d) => setTyped((t) => (t + d).slice(0, 7))} onClear={() => setTyped('')} onBack={() => setTyped((t) => t.slice(0, -1))} onSubmit={() => typed !== '' && check(typed)} submitDisabled={typed === ''} submitClass={theme.solid} />
+      )}
     </div>
   )
 }

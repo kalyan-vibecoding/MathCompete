@@ -112,6 +112,30 @@ async function getDb() {
     }
     cached.fmSeeded = true
   }
+  // Seed orderShapesBank from order_shapes_bank.json (repo root) once, version-gated. Server-side only.
+  if (!cached.osSeeded) {
+    const ref = db.collection('reference')
+    const flag = await ref.findOne({ key: 'orderShapesSeedVersion' })
+    if (!flag || flag.value !== 'bank-v1') {
+      const raw = fs.readFileSync(path.join(process.cwd(), 'order_shapes_bank.json'), 'utf8')
+      const bank = JSON.parse(raw)
+      const items = bank.map((x) => ({
+        id: x.id || uuidv4(), grade: x.grade, strand: x.strand, questionType: x.questionType,
+        prompt: x.prompt, displayData: x.displayData, options: x.options,
+        correctAnswer: x.correctAnswer, difficultyTier: x.difficultyTier,
+        createdAt: x.createdAt ? new Date(x.createdAt) : new Date(),
+      }))
+      const os = db.collection('orderShapesBank')
+      await os.deleteMany({})
+      if (items.length) await os.insertMany(items)
+      await ref.updateOne(
+        { key: 'orderShapesSeedVersion' },
+        { $set: { key: 'orderShapesSeedVersion', value: 'bank-v1', updatedAt: new Date() } },
+        { upsert: true },
+      )
+    }
+    cached.osSeeded = true
+  }
   return db
 }
 
@@ -799,6 +823,21 @@ async function route(req, method) {
     if (!kid) return unauthorized()
     if (run.status === 'in_progress') await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { status: 'exited' } })
     return json({ ok: true })
+  }
+
+  // ---- Order and Shapes: 10 random questions for the kid's grade (unscored, no reward) ----
+  //      Full data incl correctAnswer is returned (safe: nothing scored, same trust as Just Practice).
+  if (parts[0] === 'kids' && parts[2] === 'ordershapes' && method === 'POST') {
+    const kid = await kidsCol.findOne({ id: parts[1], userId: parent.id })
+    if (!kid) return json({ error: 'Kid not found' }, 404)
+    const all = await db.collection('orderShapesBank').find({ grade: kid.grade }).toArray()
+    if (all.length < 10) return json({ error: 'Order and Shapes bank not ready.' }, 503)
+    const picked = shuffle([...all]).slice(0, 10).sort((a, b) => (a.difficultyTier || 3) - (b.difficultyTier || 3))
+    const questions = picked.map((q) => ({
+      id: q.id, strand: q.strand, questionType: q.questionType, prompt: q.prompt,
+      displayData: q.displayData, options: q.options, correctAnswer: q.correctAnswer,
+    }))
+    return json({ questions })
   }
 
   return json({ error: 'Not found' }, 404)
