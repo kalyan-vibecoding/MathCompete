@@ -1255,7 +1255,11 @@ function FunMathPicker({ theme, onPick, onExit }) {
 }
 
 // ============================ V1.3: inline SVG shape renderer ================
-const SHAPE_ICON = { star: '★', heart: '♥', circle: '●', apple: '🍎', ball: '⚽' }
+const SHAPE_ICON = {
+  star: '★', heart: '♥', circle: '●',
+  apple: '🍎', ball: '⚽', balloon: '🎈', bug: '🐛', car: '🚗',
+  cube_block: '🧊', fish: '🐟', flower: '🌸', kite: '🪁', leaf: '🍃', train_car: '🚃',
+}
 const OS_FILL = { sky: '#3b82f6', mint: '#10b981', grape: '#8b5cf6', sunset: '#f97316', bubblegum: '#ec4899' }
 function polyPoints(cx, cy, r, n, rot = -Math.PI / 2) {
   return Array.from({ length: n }, (_, i) => { const a = rot + (i * 2 * Math.PI) / n; return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}` }).join(' ')
@@ -1283,35 +1287,130 @@ function Shape3D({ shape, fill }) {
   const w = shape === 'rectangular prism' ? 64 : 52
   return <g><rect x="26" y="40" width={w} height="52" style={s} /><polygon points={`26,40 ${26 + 18},22 ${26 + 18 + w},22 ${26 + w},40`} style={dk} /><polygon points={`${26 + w},40 ${26 + w + 18},22 ${26 + w + 18},74 ${26 + w},92`} style={dk} /></g>
 }
-function ShapeSVG({ dd }) {
-  if (!dd) return null
+// --- V1.3 bank-1000-v1: figure helpers keyed off questionType ---------------
+function IconRow({ icon, count, markIndex }) {
+  const g = SHAPE_ICON[icon] || '★'
+  return (
+    <div className="flex flex-wrap justify-center gap-2 max-w-md">
+      {Array.from({ length: count || 0 }).map((_, i) => (
+        <div key={i} className={`text-4xl md:text-5xl ${i === markIndex ? 'scale-110' : 'opacity-60'}`}>
+          <span style={{ color: i === markIndex ? '#f59e0b' : '#64748b' }}>{g}</span>
+          {i === markIndex && <div className="text-xs font-bold text-amber-600 text-center">↑</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+function ValueRow({ items, cls }) {
+  return <div className="flex flex-wrap gap-2 justify-center">{(items || []).map((n, i) => <div key={i} className={`px-4 h-12 rounded-xl flex items-center text-xl font-extrabold ${cls}`}>{String(n)}</div>)}</div>
+}
+function RectFigure({ length, width, fill }) {
+  return (
+    <svg width="180" height="120" viewBox="0 0 180 120">
+      <rect x="20" y="26" width="140" height="70" style={{ fill, stroke: '#1f2937', strokeWidth: 3 }} />
+      <text x="90" y="18" textAnchor="middle" fontSize="15" fill="#334155" fontWeight="700">{length}</text>
+      <text x="176" y="61" textAnchor="middle" fontSize="15" fill="#334155" fontWeight="700" transform="rotate(90 176 61)">{width}</text>
+    </svg>
+  )
+}
+function CompositeFigure({ rect1, rect2, fill }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg width="180" height="120" viewBox="0 0 180 120">
+        <rect x="14" y="28" width="86" height="72" style={{ fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }} />
+        <rect x="100" y="56" width="66" height="44" style={{ fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }} />
+      </svg>
+      <div className="text-sm font-bold text-slate-600">{rect1?.[0]}×{rect1?.[1]} + {rect2?.[0]}×{rect2?.[1]}</div>
+    </div>
+  )
+}
+function PrismFigure({ length, width, height, fill }) {
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="150" height="130" viewBox="0 0 150 130"><Shape3D shape="rectangular prism" fill={fill} /></svg>
+      <div className="text-sm font-bold text-slate-600">{length} × {width} × {height}</div>
+    </div>
+  )
+}
+function AngleFigure({ angle }) {
+  const deg = angle === 'right' ? 90 : angle === 'acute' ? 45 : 130
+  const rad = (deg * Math.PI) / 180
+  const len = 78, ox = 26, oy = 104
+  const x2 = ox + len * Math.cos(-rad), y2 = oy + len * Math.sin(-rad)
+  const st = { stroke: '#1f2937', strokeWidth: 4, strokeLinecap: 'round' }
+  return (
+    <svg width="150" height="120" viewBox="0 0 150 120">
+      <line x1={ox} y1={oy} x2={ox + len + 10} y2={oy} style={st} />
+      <line x1={ox} y1={oy} x2={x2} y2={y2} style={st} />
+      {angle === 'right' && <rect x={ox} y={oy - 18} width="18" height="18" fill="none" stroke="#1f2937" strokeWidth="2" />}
+    </svg>
+  )
+}
+function PartitionFigure({ parts, shaded, fill }) {
+  const p = parts || 1
+  return (
+    <svg width="200" height="90" viewBox="0 0 200 90">
+      {Array.from({ length: p }).map((_, i) => (
+        <rect key={i} x={10 + i * (180 / p)} y="15" width={180 / p} height="60" style={{ fill: i < (shaded || 0) ? fill : '#ffffff', stroke: '#1f2937', strokeWidth: 2 }} />
+      ))}
+    </svg>
+  )
+}
+
+function ShapeSVG({ q }) {
+  if (!q) return null
+  const qt = q.questionType
+  const dd = q.displayData || {}
   const fill = OS_FILL[dd.color] || '#3b82f6'
-  const is3d = ['cube', 'rectangular prism', 'cylinder', 'cone', 'sphere', 'pyramid'].includes(dd.shape)
-  if (dd.type === 'row') {
-    const g = SHAPE_ICON[dd.icon] || '★'
-    return (
-      <div className="flex flex-wrap justify-center gap-2 max-w-md">
-        {Array.from({ length: dd.count }).map((_, i) => (
-          <div key={i} className={`text-4xl md:text-5xl ${i === dd.markIndex ? 'scale-110' : 'opacity-60'}`}>
-            <span style={{ color: i === dd.markIndex ? '#f59e0b' : '#64748b' }}>{g}</span>
-            {i === dd.markIndex && <div className="text-xs font-bold text-amber-600 text-center">↑</div>}
-          </div>
-        ))}
-      </div>
-    )
+
+  // ----- ORDER strand -----
+  if (qt === 'ordinal_position' || qt === 'ordinal_before_after') {
+    return <IconRow icon={dd.iconType} count={dd.itemCount} markIndex={dd.markedIndex} />
   }
-  if (dd.type === 'sequence') return <div className="flex gap-2">{dd.items.map((n, i) => <div key={i} className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-extrabold ${n === null ? 'bg-amber-100 border-2 border-dashed border-amber-400 text-amber-500' : 'bg-white border border-slate-300 text-slate-800'}`}>{n === null ? '?' : n}</div>)}</div>
-  if (dd.type === 'numbers') return <div className="flex flex-wrap gap-2 justify-center">{dd.numbers.map((n, i) => <div key={i} className="px-4 h-12 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center text-xl font-extrabold text-indigo-800">{n}</div>)}</div>
-  if (dd.type === 'fractions') return <div className="flex flex-wrap gap-2 justify-center">{dd.fractions.map((f, i) => <div key={i} className="px-4 h-12 rounded-xl bg-fuchsia-50 border border-fuchsia-200 flex items-center text-xl font-extrabold text-fuchsia-800">{f}</div>)}</div>
-  if (dd.type === 'compare') return <div className="text-4xl font-extrabold text-slate-800 flex items-center gap-3">{dd.a}<span className="text-slate-400">?</span>{dd.b}</div>
-  if (dd.type === 'rectangle') return <svg width="180" height="120" viewBox="0 0 180 120"><rect x="20" y="20" width="140" height="80" style={{ fill, stroke: '#1f2937', strokeWidth: 3 }} /><text x="90" y="14" textAnchor="middle" fontSize="14" fill="#334155" fontWeight="700">{dd.width} {dd.unit}</text><text x="176" y="64" textAnchor="middle" fontSize="14" fill="#334155" fontWeight="700" transform="rotate(90 176 64)">{dd.height} {dd.unit}</text></svg>
-  if (dd.type === 'prism') return <div className="flex flex-col items-center"><svg width="150" height="130" viewBox="0 0 150 130"><Shape3D shape="rectangular prism" fill={fill} /></svg><div className="text-sm font-bold text-slate-600">{dd.l} × {dd.w} × {dd.h} {dd.unit}</div></div>
-  if (dd.type === 'lshape') return <svg width="150" height="130" viewBox="0 0 150 130"><path d="M20,20 h100 v50 h-50 v40 h-50 Z" style={{ fill, stroke: '#1f2937', strokeWidth: 3, strokeLinejoin: 'round' }} /></svg>
-  if (dd.type === 'partition') {
-    const parts = dd.parts, shaded = dd.shaded || 0
-    return <svg width="180" height="90" viewBox="0 0 180 90">{Array.from({ length: parts }).map((_, i) => <rect key={i} x={10 + i * (160 / parts)} y="15" width={160 / parts} height="60" style={{ fill: i < shaded ? fill : '#ffffff', stroke: '#1f2937', strokeWidth: 2 }} />)}</svg>
+  if (qt === 'order_numbers' || qt === 'order_numbers_list' || qt === 'order_decimals_list') {
+    return <ValueRow items={dd.numbers} cls="bg-indigo-50 border border-indigo-200 text-indigo-800" />
   }
-  if (dd.type === 'shape') return <svg width="130" height="130" viewBox="0 0 120 120">{is3d ? <Shape3D shape={dd.shape} fill={fill} /> : <Shape2D shape={dd.shape} fill={fill} />}</svg>
+  if (qt === 'compare_fractions') {
+    return <ValueRow items={dd.fractions} cls="bg-fuchsia-50 border border-fuchsia-200 text-fuchsia-800" />
+  }
+  if (qt === 'compare_numbers' || qt === 'compare_decimals') {
+    return <div className="text-4xl font-extrabold text-slate-800 flex items-center gap-3">{String(dd.a)}<span className="text-slate-400">?</span>{String(dd.b)}</div>
+  }
+
+  // ----- SHAPES strand -----
+  if (qt === 'shape_perimeter' || qt === 'shape_area') {
+    return <RectFigure length={dd.length} width={dd.width} fill={fill} />
+  }
+  if (qt === 'shape_composite_area') {
+    return <CompositeFigure rect1={dd.rect1} rect2={dd.rect2} fill={fill} />
+  }
+  if (qt === 'shape_volume_unit_cubes') {
+    return <PrismFigure length={dd.length} width={dd.width} height={dd.height} fill={fill} />
+  }
+  if (qt === 'shape_angle_type') {
+    return <AngleFigure angle={dd.angle} />
+  }
+  if (qt === 'shape_partition_name') {
+    return <PartitionFigure parts={dd.parts} shaded={0} fill={fill} />
+  }
+  if (qt === 'shape_fraction_part') {
+    return <PartitionFigure parts={dd.parts} shaded={dd.shaded} fill={fill} />
+  }
+  // Text/logic-only questions carry no figure data
+  if (qt === 'shape_classify_quad' || qt === 'shape_hierarchy') {
+    return null
+  }
+  // Any question that provides a `shape` renders that shape (2D or 3D)
+  if (dd.shape) {
+    const shape = String(dd.shape).replace(/_/g, ' ')
+    const is3d = ['cube', 'rectangular prism', 'cylinder', 'cone', 'sphere', 'pyramid'].includes(shape)
+    return <svg width="130" height="130" viewBox="0 0 120 120">{is3d ? <Shape3D shape={shape} fill={fill} /> : <Shape2D shape={shape} fill={fill} />}</svg>
+  }
+
+  // ----- graceful fallbacks so nothing renders blank when data is present -----
+  if (Array.isArray(dd.numbers)) return <ValueRow items={dd.numbers} cls="bg-slate-50 border border-slate-200 text-slate-800" />
+  if (Array.isArray(dd.fractions)) return <ValueRow items={dd.fractions} cls="bg-slate-50 border border-slate-200 text-slate-800" />
+  if (dd.a !== undefined && dd.b !== undefined) return <div className="text-4xl font-extrabold text-slate-800 flex items-center gap-3">{String(dd.a)}<span className="text-slate-400">?</span>{String(dd.b)}</div>
   return null
 }
 
@@ -1378,7 +1477,7 @@ function OrderShapes({ kid, theme, sound, api, onExit }) {
       <div className="flex-1 flex flex-col items-center justify-center py-2">
         <Card className="px-6 py-5 bg-white/95 shadow-md max-w-lg w-full text-center">
           <div className="text-xl md:text-2xl font-bold text-slate-800 mb-4">{q?.prompt}</div>
-          <div className="flex justify-center min-h-[80px] items-center"><ShapeSVG dd={q?.displayData} /></div>
+          <div className="flex justify-center min-h-[80px] items-center"><ShapeSVG q={q} /></div>
         </Card>
 
         {isMC ? (
