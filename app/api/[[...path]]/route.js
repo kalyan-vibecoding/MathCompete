@@ -116,7 +116,7 @@ async function getDb() {
   if (!cached.osSeeded) {
     const ref = db.collection('reference')
     const flag = await ref.findOne({ key: 'orderShapesSeedVersion' })
-    if (!flag || flag.value !== 'bank-v1') {
+    if (!flag || flag.value !== 'bank-1000-v2') {
       const raw = fs.readFileSync(path.join(process.cwd(), 'order_shapes_bank.json'), 'utf8')
       const bank = JSON.parse(raw)
       const items = bank.map((x) => ({
@@ -130,7 +130,7 @@ async function getDb() {
       if (items.length) await os.insertMany(items)
       await ref.updateOne(
         { key: 'orderShapesSeedVersion' },
-        { $set: { key: 'orderShapesSeedVersion', value: 'bank-v1', updatedAt: new Date() } },
+        { $set: { key: 'orderShapesSeedVersion', value: 'bank-1000-v2', updatedAt: new Date() } },
         { upsert: true },
       )
     }
