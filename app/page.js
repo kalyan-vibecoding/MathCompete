@@ -1290,12 +1290,14 @@ function Shape3D({ shape, fill }) {
 // --- V1.3 bank-1000-v1: figure helpers keyed off questionType ---------------
 function IconRow({ icon, count, markIndex }) {
   const g = SHAPE_ICON[icon] || '★'
+  // markIndex from the bank is 1-based (position 1 = "first"); convert to 0-based array index
+  const mark = (Number(markIndex) || 1) - 1
   return (
     <div className="flex flex-wrap justify-center gap-2 max-w-md">
       {Array.from({ length: count || 0 }).map((_, i) => (
-        <div key={i} className={`text-4xl md:text-5xl ${i === markIndex ? 'scale-110' : 'opacity-60'}`}>
-          <span style={{ color: i === markIndex ? '#f59e0b' : '#64748b' }}>{g}</span>
-          {i === markIndex && <div className="text-xs font-bold text-amber-600 text-center">↑</div>}
+        <div key={i} className={`text-4xl md:text-5xl ${i === mark ? 'scale-110' : 'opacity-60'}`}>
+          <span style={{ color: i === mark ? '#f59e0b' : '#64748b' }}>{g}</span>
+          {i === mark && <div className="text-xs font-bold text-amber-600 text-center">↑</div>}
         </div>
       ))}
     </div>
@@ -1434,6 +1436,15 @@ function OrderShapes({ kid, theme, sound, api, onExit }) {
 
   const q = qs?.[idx]
   const isMC = q && Array.isArray(q.options) && q.options.length > 0
+  // Guarantee the correct answer is always one of the choices shown (defends against any bank drift)
+  const options = (() => {
+    if (!isMC) return []
+    const ans = String(q.correctAnswer).trim()
+    if (q.options.some((o) => String(o).trim() === ans)) return q.options
+    const copy = [...q.options]
+    copy[copy.length - 1] = q.correctAnswer
+    return copy
+  })()
 
   const advance = () => {
     setTyped(''); setFeedback(null)
@@ -1482,7 +1493,7 @@ function OrderShapes({ kid, theme, sound, api, onExit }) {
 
         {isMC ? (
           <div className="mt-5 w-full max-w-md grid grid-cols-1 gap-3">
-            {q.options.map((opt) => (
+            {options.map((opt) => (
               <button key={opt} onClick={() => check(opt)}
                 className={`min-h-[56px] rounded-2xl border-2 text-xl font-extrabold px-4 py-3 active:scale-95 font-display bg-white ${feedback?.type === 'correct' && String(opt) === String(q.correctAnswer) ? 'border-emerald-500 text-emerald-700' : 'border-slate-300 text-slate-800 hover:border-indigo-400'}`}>
                 {opt}
