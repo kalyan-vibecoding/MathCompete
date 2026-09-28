@@ -325,9 +325,9 @@ export default function App() {
           {activeKid && (
             <AvatarPicker kid={activeKid}
               onClose={() => setAvatarOpen(false)}
-              onSave={async (avatar, avatarColor) => {
-                setActiveKid((k) => ({ ...k, avatar, avatarColor }))
-                await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ avatar, avatarColor }) })
+              onSave={async (avatarId) => {
+                setActiveKid((k) => ({ ...k, avatarId }))
+                await api(`/api/kids/${activeKid.id}`, { method: 'PUT', body: JSON.stringify({ avatarId }) })
                 refreshActiveKid(); setAvatarOpen(false)
               }} />
           )}
@@ -407,22 +407,25 @@ function Picker({ kids, onSelect, onAdd, api }) {
   const [firstName, setFirstName] = useState('')
   const [grade, setGrade] = useState('1')
   const [themeKey, setThemeKey] = useState('animals')
-  const [avatarKey, setAvatarKey] = useState('bear')
+  const [avatarKey, setAvatarKey] = useState('astronaut_boy')
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
   const addKid = async () => {
     setErr(''); setSaving(true)
-    const res = await api('/api/kids', { method: 'POST', body: JSON.stringify({ firstName, grade: Number(grade), theme: themeKey, avatar: avatarKey }) })
+    const res = await api('/api/kids', { method: 'POST', body: JSON.stringify({ firstName, grade: Number(grade), theme: themeKey, avatarId: avatarKey }) })
     setSaving(false)
     if (!res.ok) { setErr(res.data?.error || 'Could not add player.'); return }
-    setFirstName(''); setGrade('1'); setThemeKey('animals'); setAvatarKey('bear'); setOpen(false); onAdd()
+    setFirstName(''); setGrade('1'); setThemeKey('animals'); setAvatarKey('astronaut_boy'); setOpen(false); onAdd()
   }
 
   return (
     <div>
       <h2 className="text-3xl font-extrabold text-slate-800 mb-1 font-display">Choose your player</h2>
-      <p className="text-slate-600 mb-6">Tap a card to start playing.</p>
+      <p className="text-slate-600 mb-1">Tap a card to start playing.</p>
+      <p className="mb-6">
+        <a href="/coppa-notice" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-indigo-600 underline underline-offset-2 hover:text-indigo-700">Privacy &amp; COPPA Notice</a>
+      </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {kids.map((kid) => {
           const t = themeOf(kid.theme)
@@ -431,7 +434,7 @@ function Picker({ kids, onSelect, onAdd, api }) {
               className={`${t.solid} text-white rounded-2xl p-6 text-left shadow-lg hover:opacity-95 active:scale-95 transition min-h-[44px] relative overflow-hidden`}>
               <div className="absolute right-2 top-2 text-6xl opacity-30">{t.emoji}</div>
               <div className="relative flex items-start gap-3">
-                <div className="bg-white/25 rounded-2xl p-1 shrink-0"><Avatar type={kid.avatar} color={kid.avatarColor} size={52} /></div>
+                <div className="bg-white/25 rounded-2xl p-1 shrink-0"><AvatarImg id={kid.avatarId} size={52} /></div>
                 <div>
                   <span className="text-3xl font-extrabold font-display">{kid.firstName}</span>
                   <div className="mt-1 text-white/90 font-semibold">Grade {kid.grade} · {t.name}</div>
@@ -471,15 +474,19 @@ function Picker({ kids, onSelect, onAdd, api }) {
               </div>
               <div className="space-y-2">
                 <Label>Avatar</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {AVATAR_LIST.map((a) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {START_AVATARS.map((a) => (
                     <button key={a} type="button" onClick={() => setAvatarKey(a)} className={`rounded-xl p-2 border-2 flex flex-col items-center gap-1 ${avatarKey === a ? 'border-slate-800 ring-2 ring-slate-800' : 'border-slate-200'}`}>
-                      <Avatar type={a} color="sunset" size={48} /><span className="text-xs font-bold font-display">{AVATAR_LABEL[a]}</span>
+                      <AvatarImg id={a} size={64} /><span className="text-xs font-bold font-display">{AVATAR_LABELS[a]}</span>
                     </button>
                   ))}
                 </div>
+                <p className="text-xs text-slate-500">Unlock 6 more characters with perfect Read and Think runs!</p>
               </div>
               {err && <p className="text-sm text-red-600">{err}</p>}
+              <p className="pt-1">
+                <a href="/coppa-notice" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-indigo-600 underline underline-offset-2 hover:text-indigo-700">Privacy &amp; COPPA Notice</a>
+              </p>
             </div>
             <DialogFooter>
               <Button onClick={addKid} disabled={saving || !firstName.trim()}>{saving ? 'Adding…' : 'Add player'}</Button>
@@ -502,7 +509,7 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button onClick={onOpenAvatar} aria-label="My Avatar" className="rounded-full bg-white border border-slate-200 shadow-sm p-1 shrink-0 active:scale-95">
-            <Avatar type={kid.avatar} color={kid.avatarColor} size={56} />
+            <AvatarImg id={kid.avatarId} size={56} />
           </button>
           <div>
             <h2 className="text-3xl font-extrabold text-slate-800 font-display">Hi {kid.firstName}! 👋</h2>
@@ -572,7 +579,7 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
         <button onClick={onFunMath} className="rounded-2xl p-5 bg-white/95 border-2 border-slate-200 hover:border-fuchsia-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[100px]">
           <Puzzle className="w-8 h-8 text-fuchsia-600" />
           <span className="text-lg font-extrabold text-slate-800 font-display">Fun Math</span>
-          <span className="text-xs text-slate-500">Word problems · win a color</span>
+          <span className="text-xs text-slate-500">Word problems · win a character</span>
         </button>
       </div>
 
@@ -951,6 +958,21 @@ const AV_COLOR_ORDER = ['sunset', 'sky', 'grape', 'mint', 'bubblegum', 'gold']
 const AVATAR_LIST = ['bear', 'dog', 'dinosaur']
 const AVATAR_LABEL = { bear: 'Bear', dog: 'Dog', dinosaur: 'Dinosaur' }
 
+// V1.4 — illustrated avatar gallery (fixed unlock order; images in /public/avatars/)
+const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot']
+const START_AVATARS = ['astronaut_boy', 'astronaut_girl']
+const AVATAR_LABELS = {
+  astronaut_boy: 'Astronaut Boy', astronaut_girl: 'Astronaut Girl', golden_retriever: 'Golden Retriever',
+  baby_dinosaur: 'Baby Dino', airplane: 'Airplane', unicorn: 'Unicorn', girl_pilot: 'Girl Pilot', boy_pilot: 'Boy Pilot',
+}
+const avatarSrc = (id) => `/avatars/${AVATAR_IDS.includes(id) ? id : 'astronaut_boy'}.webp`
+function AvatarImg({ id = 'astronaut_boy', size = 96, className = '' }) {
+  return (
+    <img src={avatarSrc(id)} alt={AVATAR_LABELS[id] || 'Avatar'} draggable={false}
+      className={`rounded-full object-cover ${className}`} style={{ width: size, height: size }} />
+  )
+}
+
 function Avatar({ type = 'bear', color = 'sunset', size = 96 }) {
   const uid = useId().replace(/:/g, '')
   const base = AV_COLORS[color] || AV_COLORS.sunset
@@ -996,41 +1018,32 @@ function Avatar({ type = 'bear', color = 'sunset', size = 96 }) {
 }
 
 function AvatarPicker({ kid, onSave, onClose }) {
-  const [type, setType] = useState(kid.avatar || 'bear')
-  const [color, setColor] = useState(kid.avatarColor || 'sunset')
-  const owned = kid.unlockedColors || ['sunset', 'sky']
+  const owned = Array.isArray(kid.unlockedAvatars) && kid.unlockedAvatars.length ? kid.unlockedAvatars : START_AVATARS
+  const initial = AVATAR_IDS.includes(kid.avatarId) && owned.includes(kid.avatarId) ? kid.avatarId : owned[0]
+  const [sel, setSel] = useState(initial)
   return (
     <div className="space-y-4">
-      <div className="flex justify-center py-2"><Avatar type={type} color={color} size={120} /></div>
+      <div className="flex justify-center py-2"><AvatarImg id={sel} size={120} /></div>
       <div>
-        <Label className="mb-2 block">Character</Label>
-        <div className="grid grid-cols-3 gap-2">
-          {AVATAR_LIST.map((a) => (
-            <button key={a} type="button" onClick={() => setType(a)} className={`rounded-xl p-2 border-2 flex flex-col items-center gap-1 ${type === a ? 'border-slate-800 ring-2 ring-slate-800' : 'border-slate-200'}`}>
-              <Avatar type={a} color={color} size={56} /><span className="text-xs font-bold font-display">{AVATAR_LABEL[a]}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <Label className="mb-2 block">Color</Label>
-        <div className="flex flex-wrap gap-3">
-          {AV_COLOR_ORDER.map((c) => {
-            const isOwned = owned.includes(c)
+        <Label className="mb-2 block">Choose your character</Label>
+        <div className="grid grid-cols-4 gap-2">
+          {AVATAR_IDS.map((a) => {
+            const isOwned = owned.includes(a)
             return (
-              <button key={c} type="button" disabled={!isOwned} onClick={() => setColor(c)}
-                aria-label={c} className={`w-11 h-11 rounded-full flex items-center justify-center border-2 ${color === c ? 'border-slate-800 ring-2 ring-slate-800' : 'border-white'} ${!isOwned ? 'opacity-40' : ''}`}
-                style={{ backgroundColor: AV_COLORS[c] }}>
-                {!isOwned && <Lock className="w-4 h-4 text-white" />}
+              <button key={a} type="button" disabled={!isOwned} onClick={() => isOwned && setSel(a)}
+                aria-label={AVATAR_LABELS[a]}
+                className={`relative rounded-xl p-1 border-2 flex items-center justify-center ${sel === a ? 'border-slate-800 ring-2 ring-slate-800' : 'border-slate-200'} ${!isOwned ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                <AvatarImg id={a} size={60} />
+                {!isOwned && <div className="absolute inset-0 flex items-center justify-center"><Lock className="w-5 h-5 text-slate-800" /></div>}
               </button>
             )
           })}
         </div>
-        <p className="text-xs text-slate-500 mt-2">Earn locked colors with a perfect Fun Math run!</p>
+        <p className="text-xs text-slate-500 mt-2">Earn locked characters with a perfect Read and Think run!</p>
       </div>
       <div className="flex gap-2 pt-2">
         <Button variant="outline" onClick={onClose} className="flex-1 h-12">Cancel</Button>
-        <Button onClick={() => onSave(type, color)} className="flex-1 h-12">Save</Button>
+        <Button onClick={() => onSave(sel)} className="flex-1 h-12">Save</Button>
       </div>
     </div>
   )
@@ -1192,15 +1205,16 @@ function FunMath({ kid, theme, sound, reducedMotion, api, onExit, onDone }) {
       <Card className="w-full max-w-md p-8 text-center bg-white shadow-2xl">
         {reducedMotion ? <div className="text-7xl mb-2">🌟</div> : <div className="text-7xl mb-2 animate-bounce">🎉</div>}
         <h2 className="text-3xl font-extrabold text-emerald-700 font-display">Perfect run!</h2>
-        {result.colorUnlocked ? (
+        {result.avatarUnlocked ? (
           <div className="mt-4">
-            <p className="text-lg font-bold text-slate-700">You unlocked a new color for your avatar!</p>
-            <div className="flex justify-center my-3"><div className="w-14 h-14 rounded-full border-2 border-slate-800" style={{ backgroundColor: AV_COLORS[result.colorUnlocked] }} /></div>
+            <p className="text-lg font-bold text-slate-700">You unlocked a new character!</p>
+            <div className="flex justify-center my-3"><AvatarImg id={result.avatarUnlocked} size={96} /></div>
+            <p className="text-base font-extrabold text-slate-800 font-display mb-3">{AVATAR_LABELS[result.avatarUnlocked]}</p>
             <Button onClick={() => onExit('avatar')} className={`w-full h-14 text-lg text-white ${theme.solid} font-display`}>Go to My Avatar</Button>
             <Button variant="outline" onClick={() => onExit()} className="w-full h-12 mt-2">Done</Button>
           </div>
         ) : (
-          <div className="mt-4"><p className="text-lg font-bold text-slate-700">You have every color! 🌈</p><Button onClick={() => onExit()} className={`w-full h-14 text-lg mt-3 text-white ${theme.solid} font-display`}>Done</Button></div>
+          <div className="mt-4"><p className="text-lg font-bold text-slate-700">You have every character! 🌈</p><Button onClick={() => onExit()} className={`w-full h-14 text-lg mt-3 text-white ${theme.solid} font-display`}>Done</Button></div>
         )}
       </Card>
     </div>
@@ -1242,7 +1256,7 @@ function FunMathPicker({ theme, onPick, onExit }) {
         <button onClick={() => onPick('read')} className="rounded-2xl p-6 bg-white/95 border-2 border-slate-200 hover:border-fuchsia-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[140px]">
           <Puzzle className="w-9 h-9 text-fuchsia-600" />
           <span className="text-xl font-extrabold text-slate-800 font-display">Read and Think</span>
-          <span className="text-xs text-slate-600 text-center">20 word problems · win an avatar color</span>
+          <span className="text-xs text-slate-600 text-center">20 word problems · win a character</span>
         </button>
         <button onClick={() => onPick('ordershapes')} className="rounded-2xl p-6 bg-white/95 border-2 border-slate-200 hover:border-indigo-400 flex flex-col items-center gap-2 shadow-sm active:scale-95 min-h-[140px]">
           <Sparkles className="w-9 h-9 text-indigo-600" />

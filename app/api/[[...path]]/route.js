@@ -42,11 +42,31 @@ const FUN_COLORS = ['sunset', 'sky', 'grape', 'mint', 'bubblegum', 'gold'] // un
 const START_COLORS = ['sunset', 'sky'] // 2 unlocked at start, 4 earnable via Fun Math
 const FUNRUN_SIZE = 20
 
+// V1.4 — illustrated avatar gallery (additive). Legacy avatar/avatarColor/unlockedColors
+// fields are KEPT in the schema, untouched, just unused by the new UI.
+const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot'] // fixed unlock order
+const START_AVATARS = ['astronaut_boy', 'astronaut_girl'] // 2 free at start; other 6 earned via perfect Read & Think runs
+
 function avatarDefaults(kid) {
+  const unlockedColors = Array.isArray(kid.unlockedColors) && kid.unlockedColors.length ? kid.unlockedColors : [...START_COLORS]
+  // New avatar system (additive). If unset, migrate from color progress:
+  // grant as many avatars (in the fixed order) as the kid had unlocked colors — never fewer than the 2 starters.
+  let unlockedAvatars = Array.isArray(kid.unlockedAvatars) && kid.unlockedAvatars.length
+    ? kid.unlockedAvatars.filter((a) => AVATAR_IDS.includes(a))
+    : null
+  if (!unlockedAvatars || !unlockedAvatars.length) {
+    const count = Math.min(Math.max(unlockedColors.length, START_AVATARS.length), AVATAR_IDS.length)
+    unlockedAvatars = AVATAR_IDS.slice(0, count)
+  }
+  for (const s of START_AVATARS) if (!unlockedAvatars.includes(s)) unlockedAvatars.unshift(s)
+  let avatarId = AVATAR_IDS.includes(kid.avatarId) ? kid.avatarId : null
+  if (!avatarId || !unlockedAvatars.includes(avatarId)) avatarId = unlockedAvatars[0] || START_AVATARS[0]
   return {
     avatar: AVATARS.includes(kid.avatar) ? kid.avatar : 'bear',
     avatarColor: FUN_COLORS.includes(kid.avatarColor) ? kid.avatarColor : 'sunset',
-    unlockedColors: Array.isArray(kid.unlockedColors) && kid.unlockedColors.length ? kid.unlockedColors : [...START_COLORS],
+    unlockedColors,
+    avatarId,
+    unlockedAvatars,
   }
 }
 
@@ -343,6 +363,13 @@ function computeStreak(dates) {
 }
 
 async function kidStats(db, kid, today) {
+  // One-time additive migration to the illustrated avatar system (legacy fields untouched).
+  if (!AVATAR_IDS.includes(kid.avatarId) || !Array.isArray(kid.unlockedAvatars) || !kid.unlockedAvatars.length) {
+    const d = avatarDefaults(kid)
+    await db.collection('kids').updateOne({ id: kid.id }, { $set: { avatarId: d.avatarId, unlockedAvatars: d.unlockedAvatars } })
+    kid.avatarId = d.avatarId
+    kid.unlockedAvatars = d.unlockedAvatars
+  }
   const completed = await db.collection('dailySets').find({ kidId: kid.id, status: 'completed' }).toArray()
   // Only FINISHED speed sessions contribute stars. 'exited' = no change, 'expired' = dead (no stars).
   const finishedSpeed = await db.collection('speedSessions').find({ kidId: kid.id, status: 'finished' }).toArray()
@@ -508,10 +535,12 @@ async function route(req, method) {
     const theme = THEMES.includes(body.theme) ? body.theme : 'animals'
     const avatar = AVATARS.includes(body.avatar) ? body.avatar : 'bear'
     const avatarColor = FUN_COLORS.includes(body.avatarColor) && START_COLORS.includes(body.avatarColor) ? body.avatarColor : 'sunset'
+    const avatarId = AVATAR_IDS.includes(body.avatarId) && START_AVATARS.includes(body.avatarId) ? body.avatarId : START_AVATARS[0]
     const kid = {
       id: uuidv4(), userId: parent.id, firstName, grade,
       difficultyStep: 0, soundOn: true, theme,
-      avatar, avatarColor, unlockedColors: [...START_COLORS], createdAt: new Date(),
+      avatar, avatarColor, unlockedColors: [...START_COLORS],
+      avatarId, unlockedAvatars: [...START_AVATARS], createdAt: new Date(),
     }
     await kidsCol.insertOne(kid)
     return json({ kid: await kidStats(db, kid, null) })
@@ -541,6 +570,11 @@ async function route(req, method) {
       const owned = avatarDefaults(kid).unlockedColors
       if (!owned.includes(body.avatarColor)) return json({ error: 'Color not unlocked.' }, 400)
       update.avatarColor = body.avatarColor
+    }
+    if (body.avatarId !== undefined) {
+      const owned = avatarDefaults(kid).unlockedAvatars
+      if (!AVATAR_IDS.includes(body.avatarId) || !owned.includes(body.avatarId)) return json({ error: 'Avatar not unlocked.' }, 400)
+      update.avatarId = body.avatarId
     }
     if (Object.keys(update).length) await kidsCol.updateOne({ id: kid.id }, { $set: update })
     const fresh = await kidsCol.findOne({ id: kid.id })
@@ -803,13 +837,13 @@ async function route(req, method) {
     const allCorrect = run.questions.every((x) => x.correct)
 
     if (allCorrect) {
-      // grant exactly one new color (server-side), until the kid owns them all
-      const owned = avatarDefaults(kid).unlockedColors
-      const next = FUN_COLORS.find((c) => !owned.includes(c))
-      let unlockedColors = owned
-      if (next) { unlockedColors = [...owned, next]; await kidsCol.updateOne({ id: kid.id }, { $set: { unlockedColors } }) }
-      await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions, status: 'completed', colorUnlocked: next || null, completedAt: new Date() } })
-      return json({ correct: true, runComplete: true, colorUnlocked: next || null, allOwned: !next, unlockedColors, correctCount })
+      // grant exactly one new avatar (server-side), in the fixed order, until the kid owns them all
+      const owned = avatarDefaults(kid).unlockedAvatars
+      const next = AVATAR_IDS.find((a) => !owned.includes(a))
+      let unlockedAvatars = owned
+      if (next) { unlockedAvatars = [...owned, next]; await kidsCol.updateOne({ id: kid.id }, { $set: { unlockedAvatars } }) }
+      await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions, status: 'completed', avatarUnlocked: next || null, completedAt: new Date() } })
+      return json({ correct: true, runComplete: true, avatarUnlocked: next || null, allOwned: !next, unlockedAvatars, correctCount })
     }
     await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions } })
     return json({ correct: q.correct, message: q.correct ? null : 'Almost! Try again', correctCount, total: FUNRUN_SIZE, runComplete: false })
