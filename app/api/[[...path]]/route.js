@@ -29,7 +29,7 @@ import path from 'path'
 // ----------------------------- constants -------------------------------------
 const MAX_STEP = 4
 const SET_SIZE = 30
-const SPEED_SIZE = 10
+const SPEED_SIZE = 15            // V1.5: 15 questions (was 10). Old 10-question sessions keep their original scoring.
 const SPEED_SECONDS = 180        // 3 minutes
 const SPEED_GRACE = 10           // network grace window
 const MAX_SPEED_PER_DAY = 3
@@ -345,10 +345,14 @@ async function usedDisplays(db, kidId, date) {
   return out
 }
 
-// live score of a speed session: 4 - 0.5 per wrong/unanswered problem.
+// live score of a speed session: max 4, minus (5 / total) per wrong/unanswered problem.
+// 10-question sessions (legacy): -0.5 each (unchanged). 15-question sessions: -1/3 each (scaled).
+// Range is identical for both: 4 (all right) down to -1 (all wrong).
 function speedScore(session) {
-  const wrong = (session.problems || []).filter((p) => !p.correct).length
-  return 4 - 0.5 * wrong
+  const probs = session.problems || []
+  const total = probs.length || SPEED_SIZE
+  const wrong = probs.filter((p) => !p.correct).length
+  return 4 - (5 / total) * wrong
 }
 
 // ----------------------------- stats (all computed live) ---------------------
@@ -394,7 +398,8 @@ async function kidStats(db, kid, today) {
       .countDocuments({ kidId: kid.id, date: today, status: { $in: ['finished', 'exited', 'expired'] } })
   }
   speedEver = (await db.collection('speedSessions').countDocuments({ kidId: kid.id })) > 0
-
+  // V1.5: Fun Math (Read & Think) completions — computed live, never stored
+  const funMathCompleted = await db.collection('funMathRuns').countDocuments({ kidId: kid.id, status: 'completed' })
   return {
     id: kid.id,
     firstName: kid.firstName,
@@ -415,6 +420,139 @@ async function kidStats(db, kid, today) {
     speedRemaining: Math.max(0, MAX_SPEED_PER_DAY - speedUsedToday),
     speedLocked: speedUsedToday >= MAX_SPEED_PER_DAY,
     speedEver,
+    funMathCompleted,
+  }
+}
+
+// ----------------------------- V1.5: parent dashboard (read-only, live) -------
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return ymd(d)
+}
+function pct(num, den) { return den > 0 ? Math.round((num / den) * 100) : null }
+function bestStreakOf(dates) {
+  const sorted = [...new Set(dates)].sort()
+  let best = 0, cur = 0, prev = null
+  for (const d of sorted) {
+    cur = prev && addDays(prev, 1) === d ? cur + 1 : 1
+    if (cur > best) best = cur
+    prev = d
+  }
+  return best
+}
+
+async function kidDashboard(db, kid, today) {
+  const base = await kidStats(db, kid, today)
+  const ref = today || ymd(new Date())
+  const sets = await db.collection('dailySets').find({ kidId: kid.id }).toArray()
+  const speeds = await db.collection('speedSessions').find({ kidId: kid.id }).toArray()
+  const runs = await db.collection('funMathRuns').find({ kidId: kid.id }).toArray()
+
+  const completedSets = sets.filter((s) => s.status === 'completed')
+  const finishedSpeed = speeds.filter((s) => s.status === 'finished')
+  const completedRuns = runs.filter((r) => r.status === 'completed')
+  const touchedRuns = runs.filter((r) => (r.questions || []).some((q) => q.answered))
+
+  // ---- active days: any finished practice set, finished speed session, or Fun Math run with an answer
+  const activeSet = new Set([
+    ...completedSets.map((s) => s.date),
+    ...finishedSpeed.map((s) => s.date),
+    ...touchedRuns.map((r) => r.date),
+  ].filter(Boolean))
+  const activeDates = [...activeSet].sort()
+  const inWindow = (n) => activeDates.filter((d) => d > addDays(ref, -n) && d <= ref).length
+  const normalDates = [...new Set(completedSets.map((s) => s.date))]
+
+  // ---- first-try accuracy (practice sets, every problem the kid attempted)
+  const ops = {}
+  let attempted = 0, firstTry = 0
+  for (const s of sets) {
+    for (const p of (s.problems || [])) {
+      if (!(p.attempts > 0)) continue
+      attempted++; if (p.firstTryCorrect) firstTry++
+      const o = ops[p.operation] || (ops[p.operation] = { attempted: 0, firstTry: 0 })
+      o.attempted++; if (p.firstTryCorrect) o.firstTry++
+    }
+  }
+  const OP_ORDER = ['add', 'sub', 'mul', 'div', 'fraction']
+  const byOperation = OP_ORDER.filter((k) => ops[k]).map((k) => ({ operation: k, attempted: ops[k].attempted, firstTryAccuracy: pct(ops[k].firstTry, ops[k].attempted) }))
+
+  // ---- speed math
+  let sCorrect = 0, sTotal = 0, bestStars = null, starSum = 0, perfect = 0
+  for (const s of finishedSpeed) {
+    const total = (s.problems || []).length
+    const correct = (s.problems || []).filter((p) => p.correct).length
+    const stars = speedScore(s)
+    sCorrect += correct; sTotal += total; starSum += stars
+    if (bestStars === null || stars > bestStars) bestStars = stars
+    if (total > 0 && correct === total) perfect++
+  }
+  const recentSpeed = [...finishedSpeed]
+    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt)).slice(0, 8)
+    .map((s) => ({
+      date: s.date, correct: (s.problems || []).filter((p) => p.correct).length,
+      total: (s.problems || []).length, stars: round1(speedScore(s)),
+    }))
+
+  // ---- fun math (Read & Think). First-try is only known for runs answered after V1.5 tracking.
+  let fAttempted = 0, fFirst = 0
+  for (const r of runs) for (const q of (r.questions || [])) {
+    if (!(q.attempts > 0)) continue
+    fAttempted++; if (q.firstTryCorrect) fFirst++
+  }
+
+  // ---- last 14 days (oldest -> newest)
+  const last14 = []
+  for (let i = 13; i >= 0; i--) {
+    const d = addDays(ref, -i)
+    const dayStars = completedSets.filter((s) => s.date === d).length * 2 + finishedSpeed.filter((s) => s.date === d).reduce((a, s) => a + speedScore(s), 0)
+    last14.push({
+      date: d,
+      active: activeSet.has(d),
+      practiceSets: completedSets.filter((s) => s.date === d).length,
+      speedSessions: finishedSpeed.filter((s) => s.date === d).length,
+      funMathRuns: completedRuns.filter((r) => r.date === d).length,
+      stars: round1(clamp0(dayStars)),
+    })
+  }
+
+  return {
+    kid: {
+      id: base.id, firstName: base.firstName, grade: base.grade, avatarId: base.avatarId,
+      levelLabel: base.levelLabel, difficultyStep: base.difficultyStep, totalStars: base.totalStars,
+    },
+    activity: {
+      activeDaysTotal: activeDates.length,
+      activeDaysLast7: inWindow(7),
+      activeDaysLast30: inWindow(30),
+      lastActive: activeDates[activeDates.length - 1] || null,
+      streak: base.streak,
+      bestStreak: bestStreakOf(normalDates),
+      last14,
+    },
+    practice: {
+      setsCompleted: completedSets.length,
+      problemsAttempted: attempted,
+      firstTryAccuracy: pct(firstTry, attempted),
+      byOperation,
+    },
+    speed: {
+      sessionsFinished: finishedSpeed.length,
+      sessionsLeftEarly: speeds.filter((s) => s.status === 'exited').length,
+      accuracy: pct(sCorrect, sTotal),
+      avgStars: finishedSpeed.length ? round1(starSum / finishedSpeed.length) : null,
+      bestStars: bestStars === null ? null : round1(bestStars),
+      perfectSessions: perfect,
+      recent: recentSpeed,
+    },
+    funMath: {
+      completed: completedRuns.length,
+      started: runs.length,
+      completionRate: pct(completedRuns.length, runs.length),
+      firstTryAccuracy: pct(fFirst, fAttempted),
+      perfectFirstTryRuns: completedRuns.filter((r) => r.firstTry === true).length,
+      avatarsUnlocked: (base.unlockedAvatars || []).length,
+      avatarsTotal: AVATAR_IDS.length,
+    },
   }
 }
 
@@ -435,6 +573,7 @@ async function speedResultPayload(db, kid, session, today) {
     sessionComplete: true,
     starsEarned: round1(speedScore(session)),
     wrong,
+    total: session.problems.length,
     perfect: wrong === 0,
     totalStars: stats.totalStars,
     todayStars: stats.todayStars,
@@ -524,6 +663,16 @@ async function route(req, method) {
     if (today) await Promise.all(kids.map((k) => expireStale(db, k.id, today)))
     const stats = await Promise.all(kids.map((k) => kidStats(db, k, today)))
     return json({ kids: stats })
+  }
+
+  // ---- V1.5 parent dashboard (read-only) ----  GET /api/kids/:id/dashboard?date=YYYY-MM-DD
+  // Server-side isolation: kid must belong to the signed-in parent (the client-side math gate is UX only).
+  if (parts[0] === 'kids' && parts.length === 3 && parts[2] === 'dashboard' && method === 'GET') {
+    const kid = await kidsCol.findOne({ id: parts[1], userId: parent.id })
+    if (!kid) return json({ error: 'Kid not found' }, 404)
+    const d = url.searchParams.get('date')
+    const today = d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
+    return json({ dashboard: await kidDashboard(db, kid, today) })
   }
 
   // ---- create kid ----
@@ -753,7 +902,7 @@ async function route(req, method) {
     if (idx < 0) return json({ error: 'Problem not found' }, 400)
     const prob = session.problems[idx]
     if (prob.answered) {
-      return json({ correct: prob.correct, alreadyAnswered: true, answeredCount: session.problems.filter((p) => p.answered).length, total: SPEED_SIZE })
+      return json({ correct: prob.correct, alreadyAnswered: true, answeredCount: session.problems.filter((p) => p.answered).length, total: session.problems.length })
     }
     const answer = Number(body.answer)
     if (!Number.isFinite(answer)) return json({ error: 'Answer must be a number.' }, 400)
@@ -771,7 +920,7 @@ async function route(req, method) {
     await speedCol.updateOne({ id: session.id }, { $set: { problems: session.problems } })
     return json({
       correct: prob.correct, setComplete: false,
-      answeredCount: session.problems.filter((p) => p.answered).length, total: SPEED_SIZE,
+      answeredCount: session.problems.filter((p) => p.answered).length, total: session.problems.length,
     })
   }
 
@@ -833,16 +982,20 @@ async function route(req, method) {
 
     q.answered = true; q.given = answer
     q.correct = answer === bankItem.numericAnswer
+    // V1.5 (additive): per-question attempt tracking for the parent dashboard
+    q.attempts = (q.attempts || 0) + 1
+    if (q.correct && q.attempts === 1) q.firstTryCorrect = true
     const correctCount = run.questions.filter((x) => x.correct).length
     const allCorrect = run.questions.every((x) => x.correct)
 
     if (allCorrect) {
+      const firstTry = run.questions.every((x) => x.firstTryCorrect === true)
       // grant exactly one new avatar (server-side), in the fixed order, until the kid owns them all
       const owned = avatarDefaults(kid).unlockedAvatars
       const next = AVATAR_IDS.find((a) => !owned.includes(a))
       let unlockedAvatars = owned
       if (next) { unlockedAvatars = [...owned, next]; await kidsCol.updateOne({ id: kid.id }, { $set: { unlockedAvatars } }) }
-      await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions, status: 'completed', avatarUnlocked: next || null, completedAt: new Date() } })
+      await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions, status: 'completed', avatarUnlocked: next || null, firstTry, completedAt: new Date() } })
       return json({ correct: true, runComplete: true, avatarUnlocked: next || null, allOwned: !next, unlockedAvatars, correctCount })
     }
     await db.collection('funMathRuns').updateOne({ id: run.id }, { $set: { questions: run.questions } })
