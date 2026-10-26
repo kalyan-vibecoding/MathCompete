@@ -45,7 +45,8 @@ const FUNRUN_SIZE = 20
 // V1.4 — illustrated avatar gallery (additive). Legacy avatar/avatarColor/unlockedColors
 // fields are KEPT in the schema, untouched, just unused by the new UI.
 const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot',
-  'superhero_boy', 'doctor_girl', 'doctor_boy', 'scientist_boy', 'scientist_girl'] // V1.5 additions appended (order = unlock order) // fixed unlock order
+  'superhero_boy', 'doctor_girl', 'doctor_boy', 'scientist_boy', 'scientist_girl',
+  'fire_truck', 'submarine', 'race_car', 'robot', 'wizard'] // V1.5 additions appended (order = unlock order) // fixed unlock order
 const START_AVATARS = ['astronaut_boy', 'astronaut_girl'] // 2 free at start; other 6 earned via perfect Read & Think runs
 
 function avatarDefaults(kid) {
