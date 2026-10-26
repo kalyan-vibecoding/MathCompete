@@ -975,11 +975,13 @@ const AVATAR_LIST = ['bear', 'dog', 'dinosaur']
 const AVATAR_LABEL = { bear: 'Bear', dog: 'Dog', dinosaur: 'Dinosaur' }
 
 // V1.4 — illustrated avatar gallery (fixed unlock order; images in /public/avatars/)
-const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot']
+const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot',
+  'superhero_boy', 'doctor_girl', 'doctor_boy', 'scientist_boy', 'scientist_girl'] // V1.5 additions appended (order = unlock order)
 const START_AVATARS = ['astronaut_boy', 'astronaut_girl']
 const AVATAR_LABELS = {
   astronaut_boy: 'Astronaut Boy', astronaut_girl: 'Astronaut Girl', golden_retriever: 'Golden Retriever',
   baby_dinosaur: 'Baby Dino', airplane: 'Airplane', unicorn: 'Unicorn', girl_pilot: 'Girl Pilot', boy_pilot: 'Boy Pilot',
+  superhero_boy: 'Super Hero', doctor_girl: 'Doctor Girl', doctor_boy: 'Doctor Boy', scientist_boy: 'Scientist Boy', scientist_girl: 'Scientist Girl',
 }
 const avatarSrc = (id) => `/avatars/${AVATAR_IDS.includes(id) ? id : 'astronaut_boy'}.webp`
 function AvatarImg({ id = 'astronaut_boy', size = 96, className = '' }) {
