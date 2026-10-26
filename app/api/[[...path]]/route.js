@@ -47,8 +47,9 @@ const FUNRUN_SIZE = 20
 const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot',
   'superhero_boy', 'doctor_girl', 'doctor_boy', 'scientist_boy', 'scientist_girl',
   'fire_truck', 'submarine', 'race_car', 'robot', 'wizard',
-  'mermaid', 'rocket', 'baby_dragon', 'koala', 'bunny'] // V1.5 additions appended (order = unlock order) // fixed unlock order
-const START_AVATARS = ['astronaut_boy', 'astronaut_girl'] // 2 free at start; other 6 earned via perfect Read & Think runs
+  'mermaid', 'rocket', 'baby_dragon', 'koala', 'bunny',
+  'kitten', 'lion_cub', 'tiger_cub', 'panda', 'fox'] // V1.5 additions appended (order = unlock order) // fixed unlock order
+const START_AVATARS = ['astronaut_boy', 'astronaut_girl'] // 2 free at start; the other 26 earned via perfect Read & Think runs
 
 function avatarDefaults(kid) {
   const unlockedColors = Array.isArray(kid.unlockedColors) && kid.unlockedColors.length ? kid.unlockedColors : [...START_COLORS]
