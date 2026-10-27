@@ -20,6 +20,7 @@ import {
   Check, RotateCcw, Volume2, VolumeX, Plus, Star, Pencil, LogOut, Delete, Heart,
   PartyPopper, CalendarDays, Flame, ArrowUp, ArrowDown, Sparkles, DoorOpen, Zap, Palette,
   Divide, Minus, X as XIcon, ArrowLeft, Puzzle, Dumbbell, ChevronRight, Lock,
+  BarChart3, ShieldCheck,
 } from 'lucide-react'
 import { useId } from 'react'
 
@@ -107,6 +108,7 @@ export default function App() {
   const [showExplainer, setShowExplainer] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [funSub, setFunSub] = useState(null) // null | 'read' | 'ordershapes'
+  const [parentView, setParentView] = useState(null) // V1.5: null | 'gate' | 'dash'
 
   const [busy, setBusy] = useState(false)
   const soundRef = useRef(true)
@@ -253,7 +255,7 @@ export default function App() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6">
-        {!activeKid && <Picker kids={kids} onSelect={selectKid} onAdd={loadKids} api={api} />}
+        {!activeKid && <Picker kids={kids} onSelect={selectKid} onAdd={loadKids} api={api} onParent={() => setParentView('gate')} />}
 
         {activeKid && mode === null && (
           <KidHome
@@ -318,6 +320,12 @@ export default function App() {
       )}
       {showExplainer && (
         <SpeedExplainer theme={theme} onClose={() => setShowExplainer(false)} onGo={() => { setShowExplainer(false); actuallyStartSpeed() }} />
+      )}
+      {parentView === 'gate' && (
+        <ParentGate onCancel={() => setParentView(null)} onPass={() => setParentView('dash')} />
+      )}
+      {parentView === 'dash' && (
+        <ParentDashboard kids={kids} api={api} onClose={() => { setParentView(null); refreshActiveKid() }} />
       )}
       <Dialog open={avatarOpen} onOpenChange={setAvatarOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -402,7 +410,7 @@ function ThemeTiles({ value, onChange }) {
 }
 
 // ------------------------------- Picker --------------------------------------
-function Picker({ kids, onSelect, onAdd, api }) {
+function Picker({ kids, onSelect, onAdd, api, onParent }) {
   const [open, setOpen] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [grade, setGrade] = useState('1')
@@ -423,8 +431,13 @@ function Picker({ kids, onSelect, onAdd, api }) {
     <div>
       <h2 className="text-3xl font-extrabold text-slate-800 mb-1 font-display">Choose your player</h2>
       <p className="text-slate-600 mb-1">Tap a card to start playing.</p>
-      <p className="mb-6">
+      <p className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
         <a href="/coppa-notice" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-indigo-600 underline underline-offset-2 hover:text-indigo-700">Privacy &amp; COPPA Notice</a>
+        {kids.length > 0 && onParent && (
+          <button data-testid="open-parent-dashboard" onClick={onParent} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 bg-white/90 border border-slate-200 rounded-full px-3 py-1.5 shadow-sm hover:bg-white">
+            <BarChart3 className="w-4 h-4 text-indigo-600" /> Parent Dashboard <Lock className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+        )}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {kids.map((kid) => {
@@ -481,7 +494,7 @@ function Picker({ kids, onSelect, onAdd, api }) {
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500">Unlock 6 more characters with perfect Read and Think runs!</p>
+                <p className="text-xs text-slate-500">Unlock {AVATAR_IDS.length - START_AVATARS.length} more characters with perfect Read and Think runs!</p>
               </div>
               {err && <p className="text-sm text-red-600">{err}</p>}
               <p className="pt-1">
@@ -583,12 +596,15 @@ function KidHome({ kid, theme, busy, onPlay, onSpeed, onToggleSound, onGradeChan
         </button>
       </div>
 
-      {kid.history?.length > 0 && (
+      {(kid.history?.length > 0 || kid.funMathCompleted > 0) && (
         <Card className="p-4 bg-white/95">
           <h3 className="font-bold text-slate-700 mb-1 font-display">Your history</h3>
-          <p className="text-sm text-slate-500 mb-3">{kid.daysPlayed} days played, {fmtStars(kid.totalStars)} stars earned</p>
+          <p className="text-sm text-slate-500 mb-1">{kid.daysPlayed} days played, {fmtStars(kid.totalStars)} stars earned</p>
+          <p data-testid="funmath-completed" className="text-sm font-semibold text-fuchsia-700 mb-3 flex items-center gap-1">
+            <Puzzle className="w-4 h-4" /> Fun Math completed: {kid.funMathCompleted || 0} {kid.funMathCompleted === 1 ? 'time' : 'times'}
+          </p>
           <div className="flex flex-wrap gap-2">
-            {kid.history.slice(-14).map((h) => (
+            {(kid.history || []).slice(-14).map((h) => (
               <div key={h.date} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 rounded-full px-3 py-1 text-sm font-semibold">
                 <span>{h.date.slice(5)}</span><Star className="w-3 h-3 fill-amber-400 text-amber-400" /><span>{fmtStars(h.stars)}</span>
               </div>
@@ -705,7 +721,8 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
   const currentId = queue[0]
   const problem = set.problems.find((p) => p.id === currentId)
   const solvedCount = set.problems.filter((p) => p.solved).length
-  const pct = Math.round((solvedCount / 30) * 100)
+  const setTotal = set.problems.length || 50 // new sets have 50 (SET_SIZE); an older in-progress 30-problem set still counts correctly
+  const pct = Math.round((solvedCount / setTotal) * 100)
 
   const submit = useCallback(async () => {
     if (!currentId || typed === '' || busy) return
@@ -742,7 +759,7 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
       <div className="flex items-center gap-2 mb-3">
         <ExitButton onExit={onExit} />
         <Progress value={pct} className="h-4 flex-1" />
-        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">{solvedCount}/30</span>
+        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">{solvedCount} / {setTotal}</span>
       </div>
       <div className="flex justify-end gap-2 mb-2">
         <button onClick={onToggleSound} aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'} className="w-11 h-11 rounded-full bg-white border border-slate-200 flex items-center justify-center">
@@ -755,7 +772,7 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="font-display">Start fresh?</AlertDialogTitle>
-              <AlertDialogDescription>Your current 30 questions will go away and you'll get 30 new ones. This earns nothing.</AlertDialogDescription>
+              <AlertDialogDescription>Your current {setTotal} questions will go away and you'll get 50 new ones. This earns nothing.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep playing</AlertDialogCancel>
@@ -866,7 +883,7 @@ function SpeedGame({ session, theme, sound, reducedMotion, api, soundOn, onExit,
         </div>
         <div className="text-center">
           <div className="text-sm text-slate-500 font-semibold">Question</div>
-          <div className="text-3xl font-extrabold text-slate-800 font-display">{Math.min(answered + 1, 10)}<span className="text-slate-400 text-xl"> / 10</span></div>
+          <div className="text-3xl font-extrabold text-slate-800 font-display">{Math.min(answered + 1, session.problems.length)}<span className="text-slate-400 text-xl"> / {session.problems.length}</span></div>
         </div>
       </div>
 
@@ -896,10 +913,10 @@ function SpeedExplainer({ theme, onClose, onGo }) {
         <div className="text-6xl mb-2">⚡</div>
         <h2 className="text-3xl font-extrabold text-slate-800 font-display">Speed Math!</h2>
         <div className="mt-4 space-y-2 text-lg text-slate-700 text-left mx-auto max-w-xs">
-          <p>🔟 10 questions</p>
+          <p>🔢 15 questions</p>
           <p>⏱️ 3 minutes</p>
           <p>⭐ All right = 4 stars</p>
-          <p>💫 Wrong ones cost half a star!</p>
+          <p>💫 Each wrong one costs a little bit of a star!</p>
         </div>
         <div className="mt-6 flex gap-2">
           <Button variant="outline" onClick={onClose} className="flex-1 h-14 text-lg">Not now</Button>
@@ -943,7 +960,7 @@ function SpeedResultOverlay({ data, theme, onClose, reducedMotion }) {
           <Star className={`w-12 h-12 ${positive ? 'fill-amber-400' : 'fill-slate-300'}`} /> {fmtSigned(data.starsEarned)}
         </div>
         <p className="text-slate-600 mt-3 font-semibold">
-          {positive ? `${10 - data.wrong} of 10 right!` : 'Slow and steady next time!'}
+          {positive ? `${(data.total || 15) - data.wrong} of ${data.total || 15} right!` : 'Slow and steady next time!'}
         </p>
         <p className="text-slate-500 mt-1">Total: {fmtStars(data.totalStars)} ⭐ · {data.speedRemaining} speed left today</p>
         <Button onClick={onClose} className={`mt-6 w-full h-14 text-xl font-bold text-white ${theme.solid} font-display`}>Done</Button>
@@ -959,11 +976,19 @@ const AVATAR_LIST = ['bear', 'dog', 'dinosaur']
 const AVATAR_LABEL = { bear: 'Bear', dog: 'Dog', dinosaur: 'Dinosaur' }
 
 // V1.4 — illustrated avatar gallery (fixed unlock order; images in /public/avatars/)
-const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot']
+const AVATAR_IDS = ['astronaut_boy', 'astronaut_girl', 'golden_retriever', 'baby_dinosaur', 'airplane', 'unicorn', 'girl_pilot', 'boy_pilot',
+  'superhero_boy', 'doctor_girl', 'doctor_boy', 'scientist_boy', 'scientist_girl',
+  'fire_truck', 'submarine', 'race_car', 'robot', 'wizard',
+  'mermaid', 'rocket', 'baby_dragon', 'koala', 'bunny',
+  'kitten', 'lion_cub', 'tiger_cub', 'panda', 'fox'] // V1.5 additions appended (order = unlock order)
 const START_AVATARS = ['astronaut_boy', 'astronaut_girl']
 const AVATAR_LABELS = {
   astronaut_boy: 'Astronaut Boy', astronaut_girl: 'Astronaut Girl', golden_retriever: 'Golden Retriever',
   baby_dinosaur: 'Baby Dino', airplane: 'Airplane', unicorn: 'Unicorn', girl_pilot: 'Girl Pilot', boy_pilot: 'Boy Pilot',
+  superhero_boy: 'Super Hero', doctor_girl: 'Doctor Girl', doctor_boy: 'Doctor Boy', scientist_boy: 'Scientist Boy', scientist_girl: 'Scientist Girl',
+  fire_truck: 'Fire Truck', submarine: 'Submarine', race_car: 'Race Car', robot: 'Robot', wizard: 'Little Wizard',
+  mermaid: 'Mermaid', rocket: 'Rocket', baby_dragon: 'Baby Dragon', koala: 'Koala', bunny: 'Bunny',
+  kitten: 'Kitten', lion_cub: 'Lion Cub', tiger_cub: 'Tiger Cub', panda: 'Panda', fox: 'Fox',
 }
 const avatarSrc = (id) => `/avatars/${AVATAR_IDS.includes(id) ? id : 'astronaut_boy'}.webp`
 function AvatarImg({ id = 'astronaut_boy', size = 96, className = '' }) {
@@ -1529,6 +1554,267 @@ function OrderShapes({ kid, theme, sound, api, onExit }) {
       {!isMC && (
         <NumberPad onDigit={(d) => setTyped((t) => (t + d).slice(0, 7))} onClear={() => setTyped('')} onBack={() => setTyped((t) => t.slice(0, -1))} onSubmit={() => typed !== '' && check(typed)} submitDisabled={typed === ''} submitClass={theme.solid} />
       )}
+    </div>
+  )
+}
+
+// ============================ V1.5: Parent Dashboard =========================
+// Apple HIG-inspired, read-only. The math gate below is a UX speed-bump for kids only;
+// real data isolation is enforced server-side (GET /api/kids/:id/dashboard checks parent ownership).
+const HIG_FONT = { fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }
+const GATE_Q = { text: 'What is 7 × 8?', answer: 56 }
+const OP_LABELS = { add: 'Addition', sub: 'Subtraction', mul: 'Multiplication', div: 'Division', fraction: 'Fractions' }
+const fmtDay = (d) => { try { return new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) } catch (_) { return d } }
+const fmtWeekday = (d) => { try { return new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'narrow', timeZone: 'UTC' }) } catch (_) { return '' } }
+const fmtPct = (n) => (n === null || n === undefined ? '—' : `${n}%`)
+
+function ParentGate({ onCancel, onPass }) {
+  const [val, setVal] = useState('')
+  const [err, setErr] = useState('')
+  const [tries, setTries] = useState(0)
+  const [lockedUntil, setLockedUntil] = useState(0)
+  const [now, setNow] = useState(Date.now())
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    if (!lockedUntil) return
+    const t = setInterval(() => { setNow(Date.now()); if (Date.now() >= lockedUntil) { setLockedUntil(0); setErr('') } }, 500)
+    return () => clearInterval(t)
+  }, [lockedUntil])
+  const locked = lockedUntil && now < lockedUntil
+  const check = (e) => {
+    e?.preventDefault()
+    if (locked || val === '') return
+    if (Number(val) === GATE_Q.answer) { onPass(); return }
+    const n = tries + 1; setTries(n); setVal('')
+    if (n >= 3) { setLockedUntil(Date.now() + 30000); setNow(Date.now()); setTries(0); setErr('Too many tries. Please wait 30 seconds.') }
+    else setErr("That's not right. Please try again.")
+  }
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" style={HIG_FONT} role="dialog" aria-modal="true" aria-labelledby="gate-title">
+      <form onSubmit={check} className="w-full max-w-[320px] bg-white/95 rounded-[14px] shadow-2xl overflow-hidden text-center">
+        <div className="px-5 pt-5 pb-4">
+          <div className="mx-auto mb-2 w-11 h-11 rounded-full bg-[#007AFF]/10 flex items-center justify-center"><ShieldCheck className="w-6 h-6 text-[#007AFF]" /></div>
+          <h2 id="gate-title" className="text-[17px] font-semibold text-black">Parents only</h2>
+          <p className="text-[13px] text-[#3C3C43]/70 mt-1">Answer this to open the Parent Dashboard.</p>
+          <p className="text-[22px] font-semibold text-black mt-3" data-testid="gate-question">{GATE_Q.text}</p>
+          <input ref={inputRef} data-testid="gate-input" inputMode="numeric" pattern="[0-9]*" autoComplete="off" aria-label="Answer"
+            value={val} disabled={!!locked} onChange={(e) => setVal(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            className="mt-3 w-full h-11 rounded-[10px] bg-[#767680]/[0.12] px-3 text-center text-[17px] text-black outline-none focus:ring-2 focus:ring-[#007AFF] disabled:opacity-50" placeholder="Answer" />
+          <p className="min-h-[18px] mt-2 text-[13px] text-[#FF3B30]" role="status" aria-live="polite" data-testid="gate-error">
+            {locked ? `Too many tries. Wait ${Math.ceil((lockedUntil - now) / 1000)}s.` : err}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 border-t border-[#3C3C43]/20">
+          <button type="button" onClick={onCancel} className="h-11 text-[17px] text-[#007AFF] border-r border-[#3C3C43]/20 active:bg-black/5">Cancel</button>
+          <button type="submit" data-testid="gate-submit" disabled={!!locked || val === ''} className="h-11 text-[17px] font-semibold text-[#007AFF] active:bg-black/5 disabled:text-[#3C3C43]/30">Continue</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function HigSection({ title, footer, children }) {
+  return (
+    <section className="mt-7">
+      {title && <h3 className="px-4 mb-1.5 text-[13px] uppercase tracking-wide text-[#6D6D72]">{title}</h3>}
+      {children}
+      {footer && <p className="px-4 mt-1.5 text-[13px] text-[#6D6D72] leading-snug">{footer}</p>}
+    </section>
+  )
+}
+function HigTile({ label, value, sub, color = '#000', testid }) {
+  return (
+    <div className="bg-white rounded-[12px] p-3.5" data-testid={testid}>
+      <div className="text-[13px] text-[#8E8E93] leading-tight">{label}</div>
+      <div className="text-[28px] font-semibold tracking-tight leading-tight mt-1" style={{ color }}>{value}</div>
+      {sub && <div className="text-[12px] text-[#8E8E93] mt-0.5 leading-tight">{sub}</div>}
+    </div>
+  )
+}
+function HigRow({ label, value, last, children }) {
+  return (
+    <div className="pl-4">
+      <div className={`flex items-center justify-between gap-3 pr-4 min-h-[44px] py-2 ${last ? '' : 'border-b border-[#C6C6C8]/70'}`}>
+        <div className="text-[17px] text-black min-w-0 flex-1">{label}{children}</div>
+        {value !== undefined && <div className="text-[17px] text-[#8E8E93] shrink-0 text-right">{value}</div>}
+      </div>
+    </div>
+  )
+}
+function HigRing({ value, color = '#34C759', size = 64 }) {
+  const r = 26, c = 2 * Math.PI * r, v = value === null || value === undefined ? 0 : value
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" className="-rotate-90 shrink-0" aria-hidden>
+      <circle cx="32" cy="32" r={r} fill="none" stroke="#E5E5EA" strokeWidth="7" />
+      <circle cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - v / 100)} />
+    </svg>
+  )
+}
+function HigBar({ value, color }) {
+  return (
+    <div className="h-1.5 rounded-full bg-[#E5E5EA] overflow-hidden mt-1.5">
+      <div className="h-full rounded-full" style={{ width: `${value || 0}%`, background: color }} />
+    </div>
+  )
+}
+
+function ParentDashboard({ kids, api, onClose }) {
+  const [selId, setSelId] = useState(kids[0]?.id || null)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  useEffect(() => {
+    if (!selId) { setLoading(false); return }
+    let alive = true
+    setLoading(true); setError('')
+    ;(async () => {
+      const res = await api(`/api/kids/${selId}/dashboard?date=${today()}`)
+      if (!alive) return
+      if (res.ok && res.data?.dashboard) setData(res.data.dashboard)
+      else { setData(null); setError(res.data?.error || 'Could not load the dashboard.') }
+      setLoading(false)
+    })()
+    return () => { alive = false }
+  }, [selId, api])
+
+  const d = data
+  const maxStars = d ? Math.max(4, ...d.activity.last14.map((x) => x.stars)) : 4
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#F2F2F7] overflow-y-auto text-black antialiased" style={HIG_FONT} data-testid="parent-dashboard">
+      <div className="sticky top-0 z-10 bg-[#F2F2F7]/85 backdrop-blur-xl border-b border-[#C6C6C8]/50">
+        <div className="max-w-3xl mx-auto h-11 px-4 flex items-center justify-between">
+          <span className="text-[13px] text-[#8E8E93] flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Read-only</span>
+          <span className="text-[17px] font-semibold">Parent Dashboard</span>
+          <button onClick={onClose} data-testid="dashboard-done" className="text-[17px] font-semibold text-[#007AFF] px-1 h-11">Done</button>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-4 pb-16">
+        <h1 className="text-[34px] font-bold tracking-tight mt-3">Dashboard</h1>
+        <p className="text-[15px] text-[#8E8E93] -mt-0.5">Calculated live from your kids&apos; activity.</p>
+
+        {kids.length > 1 && (
+          <div className="mt-4 bg-[#767680]/[0.12] rounded-[9px] p-[2px] flex" role="tablist" aria-label="Choose a kid">
+            {kids.map((k) => (
+              <button key={k.id} role="tab" aria-selected={selId === k.id} onClick={() => setSelId(k.id)} data-testid={`dash-tab-${k.id}`}
+                className={`flex-1 h-8 rounded-[7px] text-[13px] font-semibold truncate px-2 transition ${selId === k.id ? 'bg-white shadow-[0_3px_8px_rgba(0,0,0,0.12),0_3px_1px_rgba(0,0,0,0.04)]' : 'text-black/80'}`}>
+                {k.firstName}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {loading && <div className="py-24 text-center text-[15px] text-[#8E8E93]">Loading…</div>}
+        {!loading && error && <div className="mt-8 bg-white rounded-[12px] p-6 text-center text-[15px] text-[#FF3B30]">{error}</div>}
+        {!loading && !selId && <div className="mt-8 bg-white rounded-[12px] p-6 text-center text-[15px] text-[#8E8E93]">Add a player to see their progress.</div>}
+
+        {!loading && d && (
+          <>
+            {/* profile */}
+            <div className="mt-5 bg-white rounded-[12px] p-4 flex items-center gap-3">
+              <AvatarImg id={d.kid.avatarId} size={56} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[20px] font-semibold truncate" data-testid="dash-kid-name">{d.kid.firstName}</div>
+                <div className="text-[15px] text-[#8E8E93]">Grade {d.kid.grade} · {String(d.kid.levelLabel).replace(/[^A-Za-z ].*$/, '').trim()}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[22px] font-semibold flex items-center gap-1 justify-end"><Star className="w-5 h-5 fill-[#FF9500] text-[#FF9500]" />{fmtStars(d.kid.totalStars)}</div>
+                <div className="text-[12px] text-[#8E8E93]">total stars</div>
+              </div>
+            </div>
+
+            {/* activity */}
+            <HigSection title="Activity" footer="An active day is any day with a finished practice set, a finished Speed Math round, or Fun Math answers. The streak counts days in a row with a finished practice set.">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <HigTile testid="dash-active-7" label="Active days" value={`${d.activity.activeDaysLast7}/7`} sub="last 7 days" color="#007AFF" />
+                <HigTile testid="dash-active-30" label="Active days" value={d.activity.activeDaysLast30} sub="last 30 days" />
+                <HigTile testid="dash-streak" label="Current streak" value={d.activity.streak} sub={`best ${d.activity.bestStreak} days`} color="#FF9500" />
+                <HigTile testid="dash-active-total" label="All time" value={d.activity.activeDaysTotal} sub={d.activity.lastActive ? `last active ${fmtDay(d.activity.lastActive)}` : 'not active yet'} />
+              </div>
+              <div className="mt-2.5 bg-white rounded-[12px] p-4">
+                <div className="flex items-baseline justify-between">
+                  <div className="text-[15px] font-semibold">Stars, last 14 days</div>
+                  <div className="text-[13px] text-[#8E8E93]">{fmtDay(d.activity.last14[0].date)} – {fmtDay(d.activity.last14[13].date)}</div>
+                </div>
+                <div className="mt-3 flex items-end gap-1 h-28" data-testid="dash-14day">
+                  {d.activity.last14.map((x) => (
+                    <div key={x.date} className="flex-1 flex flex-col items-center justify-end h-full gap-1" title={`${fmtDay(x.date)}: ${fmtStars(x.stars)} stars`}>
+                      {x.stars > 0
+                        ? <div className="w-full max-w-[18px] rounded-[4px] bg-[#007AFF]" style={{ height: `${Math.max(6, (x.stars / maxStars) * 88)}px` }} />
+                        : <div className={`w-1.5 h-1.5 rounded-full ${x.active ? 'bg-[#34C759]' : 'bg-[#D1D1D6]'}`} />}
+                      <div className="text-[10px] text-[#8E8E93] leading-none">{fmtWeekday(x.date)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </HigSection>
+
+            {/* practice sets */}
+            <HigSection title="Practice sets" footer="First-try accuracy is the share of problems answered correctly on the first attempt.">
+              <div className="bg-white rounded-[12px] overflow-hidden">
+                <div className="p-4 flex items-center gap-4 border-b border-[#C6C6C8]/70">
+                  <div className="relative">
+                    <HigRing value={d.practice.firstTryAccuracy} color="#34C759" />
+                    <div className="absolute inset-0 flex items-center justify-center text-[13px] font-semibold">{fmtPct(d.practice.firstTryAccuracy)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[17px] font-semibold" data-testid="dash-firsttry">First-try accuracy: {fmtPct(d.practice.firstTryAccuracy)}</div>
+                    <div className="text-[15px] text-[#8E8E93]">{d.practice.setsCompleted} sets finished · {d.practice.problemsAttempted} problems tried</div>
+                  </div>
+                </div>
+                {d.practice.byOperation.length === 0 && <HigRow label={<span className="text-[#8E8E93]">No problems tried yet</span>} last />}
+                {d.practice.byOperation.map((o, i) => (
+                  <HigRow key={o.operation} last={i === d.practice.byOperation.length - 1} label={
+                    <div>
+                      <div className="flex justify-between text-[17px]"><span>{OP_LABELS[o.operation] || o.operation}</span><span className="text-[#8E8E93]">{fmtPct(o.firstTryAccuracy)}</span></div>
+                      <HigBar value={o.firstTryAccuracy} color={o.firstTryAccuracy >= 80 ? '#34C759' : o.firstTryAccuracy >= 60 ? '#FF9500' : '#FF3B30'} />
+                      <div className="text-[12px] text-[#8E8E93] mt-1">{o.attempted} tried</div>
+                    </div>
+                  } />
+                ))}
+              </div>
+            </HigSection>
+
+            {/* speed math */}
+            <HigSection title="Speed Math" footer="Stars per round range from 4 (all right) down to −1. Rounds left early earn nothing and are not included in accuracy.">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <HigTile testid="dash-speed-rounds" label="Rounds finished" value={d.speed.sessionsFinished} sub={d.speed.sessionsLeftEarly ? `${d.speed.sessionsLeftEarly} left early` : ' '} />
+                <HigTile testid="dash-speed-accuracy" label="Accuracy" value={fmtPct(d.speed.accuracy)} color="#34C759" />
+                <HigTile label="Average stars" value={d.speed.avgStars === null ? '—' : fmtStars(d.speed.avgStars)} color="#FF9500" />
+                <HigTile label="Best round" value={d.speed.bestStars === null ? '—' : fmtStars(d.speed.bestStars)} sub={`${d.speed.perfectSessions} perfect`} />
+              </div>
+              {d.speed.recent.length > 0 && (
+                <div className="mt-2.5 bg-white rounded-[12px] overflow-hidden" data-testid="dash-speed-recent">
+                  {d.speed.recent.map((s, i) => (
+                    <HigRow key={i} last={i === d.speed.recent.length - 1}
+                      label={<span>{fmtDay(s.date)} <span className="text-[#8E8E93]">· {s.correct} of {s.total} right</span></span>}
+                      value={<span className="inline-flex items-center gap-1">{fmtSigned(s.stars)} <Star className="w-4 h-4 fill-[#FF9500] text-[#FF9500]" /></span>} />
+                  ))}
+                </div>
+              )}
+            </HigSection>
+
+            {/* fun math */}
+            <HigSection title="Fun Math · Read and Think" footer="A run is completed when all 20 word problems are answered correctly. First-try accuracy is tracked for runs played from this update on. Order and Shapes is unscored and not tracked.">
+              <div className="bg-white rounded-[12px] overflow-hidden">
+                <HigRow label="Completed" value={<span data-testid="dash-fun-completed">{d.funMath.completed} {d.funMath.completed === 1 ? 'time' : 'times'}</span>} />
+                <HigRow label="Runs started" value={d.funMath.started} />
+                <HigRow label="Completion rate" value={fmtPct(d.funMath.completionRate)} />
+                <HigRow label="First-try accuracy" value={fmtPct(d.funMath.firstTryAccuracy)} />
+                <HigRow label="Characters unlocked" value={`${d.funMath.avatarsUnlocked} of ${d.funMath.avatarsTotal}`} last />
+              </div>
+            </HigSection>
+          </>
+        )}
+      </div>
     </div>
   )
 }
