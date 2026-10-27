@@ -680,14 +680,14 @@ function ExitButton({ onExit }) {
 // ------------------------------- Number pad (shared) -------------------------
 // PadKey is defined at module scope (stable identity) so the pad NEVER remounts
 // on re-render — that previously caused flickering and dropped taps.
-const PAD_KEY_BASE = 'rounded-xl font-extrabold flex items-center justify-center active:scale-90 transition-transform shadow-sm select-none touch-manipulation'
-function PadKey({ children, onClick, variant, ariaLabel, compact }) {
+const PAD_KEY_BASE = 'h-16 md:h-20 rounded-xl text-3xl font-extrabold flex items-center justify-center active:scale-90 transition-transform shadow-sm select-none touch-manipulation'
+function PadKey({ children, onClick, variant, ariaLabel }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`${PAD_KEY_BASE} ${compact ? 'h-12 md:h-14 text-2xl' : 'h-16 md:h-20 text-3xl'} ${variant === 'muted' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'}`}
+      className={`${PAD_KEY_BASE} ${variant === 'muted' ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'}`}
     >
       {children}
     </button>
@@ -695,18 +695,18 @@ function PadKey({ children, onClick, variant, ariaLabel, compact }) {
 }
 
 const PAD_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
-function NumberPad({ onDigit, onClear, onBack, onSubmit, submitDisabled, submitClass, compact, submitLabel }) {
+function NumberPad({ onDigit, onClear, onBack, onSubmit, submitDisabled, submitClass }) {
   return (
-    <div className={compact ? 'pb-1' : 'pb-4'}>
-      <div className={`grid grid-cols-3 ${compact ? 'gap-1.5' : 'gap-2'} max-w-sm mx-auto`}>
-        {PAD_DIGITS.map((d) => <PadKey key={d} compact={compact} onClick={() => onDigit(d)}>{d}</PadKey>)}
-        <PadKey compact={compact} onClick={onClear} variant="muted" ariaLabel="Clear">C</PadKey>
-        <PadKey compact={compact} onClick={() => onDigit('0')}>0</PadKey>
-        <PadKey compact={compact} onClick={onBack} variant="muted" ariaLabel="Delete"><Delete className="w-7 h-7" /></PadKey>
+    <div className="pb-4">
+      <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto">
+        {PAD_DIGITS.map((d) => <PadKey key={d} onClick={() => onDigit(d)}>{d}</PadKey>)}
+        <PadKey onClick={onClear} variant="muted" ariaLabel="Clear">C</PadKey>
+        <PadKey onClick={() => onDigit('0')}>0</PadKey>
+        <PadKey onClick={onBack} variant="muted" ariaLabel="Delete"><Delete className="w-7 h-7" /></PadKey>
       </div>
-      <div className={`max-w-sm mx-auto ${compact ? 'mt-1.5' : 'mt-2'}`}>
-        <Button onClick={onSubmit} disabled={submitDisabled} className={`w-full ${compact ? 'h-12 text-xl' : 'h-16 text-2xl'} font-extrabold rounded-xl text-white ${submitClass} font-display`}>
-          {submitLabel ? submitLabel : <><Check className="w-7 h-7 mr-2" /> Submit</>}
+      <div className="max-w-sm mx-auto mt-2">
+        <Button onClick={onSubmit} disabled={submitDisabled} className={`w-full h-16 text-2xl font-extrabold rounded-xl text-white ${submitClass} font-display`}>
+          <Check className="w-7 h-7 mr-2" /> Submit
         </Button>
 
       </div>
@@ -721,7 +721,8 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
   const currentId = queue[0]
   const problem = set.problems.find((p) => p.id === currentId)
   const solvedCount = set.problems.filter((p) => p.solved).length
-  const pct = Math.round((solvedCount / 30) * 100)
+  const setTotal = set.problems.length || 50 // new sets have 50 (SET_SIZE); an older in-progress 30-problem set still counts correctly
+  const pct = Math.round((solvedCount / setTotal) * 100)
 
   const submit = useCallback(async () => {
     if (!currentId || typed === '' || busy) return
@@ -758,7 +759,7 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
       <div className="flex items-center gap-2 mb-3">
         <ExitButton onExit={onExit} />
         <Progress value={pct} className="h-4 flex-1" />
-        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">{solvedCount}/30</span>
+        <span className="text-sm font-bold text-slate-600 whitespace-nowrap">{solvedCount} / {setTotal}</span>
       </div>
       <div className="flex justify-end gap-2 mb-2">
         <button onClick={onToggleSound} aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'} className="w-11 h-11 rounded-full bg-white border border-slate-200 flex items-center justify-center">
@@ -771,7 +772,7 @@ function NormalGame({ set, queue, setQueue, setSet, theme, sound, reducedMotion,
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="font-display">Start fresh?</AlertDialogTitle>
-              <AlertDialogDescription>Your current 30 questions will go away and you'll get 30 new ones. This earns nothing.</AlertDialogDescription>
+              <AlertDialogDescription>Your current {setTotal} questions will go away and you'll get 50 new ones. This earns nothing.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Keep playing</AlertDialogCancel>
@@ -1075,7 +1076,6 @@ function AvatarPicker({ kid, onSave, onClose }) {
 
 // ============================ V1.2: Just Practice ============================
 const P_MAX = { 1: { s: 9, dv: 5 }, 2: { s: 50, dv: 10 }, 3: { s: 99, dv: 12 }, 4: { s: 400, dv: 12 }, 5: { s: 999, dv: 20 } }
-const PRACTICE_PAGE_SIZE = 50 // V1.5: Addition / Subtraction / Division pages (Multiplication stays a 10-row table)
 const pri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
 function genPractice(op, grade) {
   const c = P_MAX[grade] || P_MAX[1]
@@ -1087,15 +1087,9 @@ function genPractice(op, grade) {
   const b = pri(2, dMax), q = pri(2, qMax); const a = b * q
   return { display: `${a} \u00f7 ${b} =`, answer: q }
 }
-function genPage(op, grade, prevSet, count = PRACTICE_PAGE_SIZE) {
+function genPage(op, grade, prevSet) {
   const out = []; const seen = new Set(); let g = 0
-  const push = (p) => { seen.add(p.display); out.push({ id: 'p' + out.length + '-' + Math.random().toString(36).slice(2, 6), ...p }) }
-  // 1) unique on this page AND not on the previous page
-  while (out.length < count && g < 6000) { g++; const p = genPractice(op, grade); if (seen.has(p.display) || (prevSet && prevSet.has(p.display))) continue; push(p) }
-  // 2) small grades have few possible problems — allow repeats from the previous page, still unique on this page
-  g = 0; while (out.length < count && g < 6000) { g++; const p = genPractice(op, grade); if (seen.has(p.display)) continue; push(p) }
-  // 3) last resort: allow repeats so the page is always full
-  while (out.length < count) push(genPractice(op, grade))
+  while (out.length < 10 && g < 3000) { g++; const p = genPractice(op, grade); if (seen.has(p.display) || (prevSet && prevSet.has(p.display))) continue; seen.add(p.display); out.push({ id: 'p' + out.length + '-' + Math.random().toString(36).slice(2, 6), ...p }) }
   return out
 }
 function genTable(table) {
@@ -1131,19 +1125,6 @@ function PracticeSection({ grade, theme, sound, onExit }) {
   const type = (d) => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active && !it.locked ? { ...it, value: (String(it.value) + d).slice(0, 6) } : it)) }
   const back = () => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active ? { ...it, value: String(it.value).slice(0, -1) } : it)) }
   const clear = () => { if (!active) return; setItems((arr) => arr.map((it) => it.id === active ? { ...it, value: '' } : it)) }
-  // keep the box being typed into visible above the sticky number pad (50-problem pages)
-  useEffect(() => {
-    if (!active || typeof document === 'undefined') return
-    const el = document.querySelector(`[data-practice-id="${active}"]`)
-    if (!el) return
-    const pad = document.querySelector('[data-practice-pad]')
-    const r = el.getBoundingClientRect()
-    const bottomLimit = window.innerHeight - (pad ? pad.getBoundingClientRect().height : 0) - 12
-    const topLimit = 72 // below the sticky header
-    if (r.bottom > bottomLimit) window.scrollBy({ top: r.bottom - bottomLimit, behavior: 'smooth' })
-    else if (r.top < topLimit) window.scrollBy({ top: r.top - topLimit, behavior: 'smooth' })
-  }, [active])
-
 
   const Header = ({ title }) => (
     <div className="flex items-center gap-2 mb-4">
@@ -1177,31 +1158,14 @@ function PracticeSection({ grade, theme, sound, onExit }) {
     </div>
   )
 
-  const isPage = op !== 'mul'
-  const filledCount = items.filter((it) => it.locked || it.value !== '').length
-  const rightCount = items.filter((it) => it.locked).length
-  // jump to the next unanswered box after the current one (wraps around)
-  const goNext = () => {
-    if (!items.length) return
-    const start = Math.max(0, items.findIndex((x) => x.id === active))
-    for (let k = 1; k <= items.length; k++) {
-      const it = items[(start + k) % items.length]
-      if (!it.locked && it.value === '') { setActive(it.id); return }
-    }
-  }
   return (
     <div className="pb-4">
       <Header title={op === 'mul' ? `Table of ${table}` : { add: 'Addition', sub: 'Subtraction', div: 'Division' }[op]} />
-      {isPage && (
-        <p data-testid="practice-progress" className="text-center text-sm font-semibold text-slate-600 -mt-2 mb-3">
-          {items.length} problems · {filledCount} filled{checked ? ` · ${rightCount} right` : ''}
-        </p>
-      )}
-      <div className={`grid grid-cols-2 ${isPage ? 'gap-x-2 sm:gap-x-3 gap-y-1.5' : 'gap-x-4 gap-y-2'} max-w-lg mx-auto mb-4`}>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 max-w-lg mx-auto mb-4">
         {items.map((it) => (
-          <button key={it.id} data-practice-id={it.id} onClick={() => !it.locked && setActive(it.id)}
-            className={`flex items-center justify-between rounded-xl px-2 sm:px-3 ${isPage ? 'h-12 text-lg' : 'h-14 text-xl'} border-2 font-bold font-display scroll-mb-80 scroll-mt-20 ${it.locked ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : active === it.id ? 'bg-white border-indigo-500 ring-2 ring-indigo-300' : checked ? 'bg-amber-50 border-amber-400' : 'bg-white border-slate-200'}`}>
-            <span className="text-slate-800 whitespace-nowrap">{it.display}</span>
+          <button key={it.id} onClick={() => !it.locked && setActive(it.id)}
+            className={`flex items-center justify-between rounded-xl px-3 h-14 border-2 text-xl font-bold font-display ${it.locked ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : active === it.id ? 'bg-white border-indigo-500' : checked ? 'bg-amber-50 border-amber-400' : 'bg-white border-slate-200'}`}>
+            <span className="text-slate-800">{it.display}</span>
             <span className="min-w-[42px] text-right">{it.locked ? <Check className="w-6 h-6 inline text-emerald-600" /> : (it.value || <span className="text-slate-300">?</span>)}</span>
           </button>
         ))}
@@ -1216,12 +1180,6 @@ function PracticeSection({ grade, theme, sound, onExit }) {
               : <Button onClick={nextPage} className={`h-14 px-6 text-lg text-white ${theme.solid} font-display`}>Next page</Button>}
             <Button variant="outline" onClick={onExit} className="h-14 px-6 text-lg">Done</Button>
           </div>
-        </div>
-      ) : isPage ? (
-        <div data-practice-pad className="sticky bottom-0 z-10 -mx-4 px-4 pt-2 pb-2 bg-white/95 backdrop-blur border-t border-slate-200">
-          <NumberPad compact onDigit={type} onClear={clear} onBack={back}
-            onSubmit={allFilled ? submit : goNext} submitDisabled={false} submitClass={theme.solid}
-            submitLabel={allFilled ? <><Check className="w-6 h-6 mr-2" /> Check answers</> : <>Next box <ChevronRight className="w-6 h-6 ml-1" /></>} />
         </div>
       ) : (
         <NumberPad onDigit={type} onClear={clear} onBack={back} onSubmit={submit} submitDisabled={!allFilled} submitClass={theme.solid} />

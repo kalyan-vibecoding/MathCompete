@@ -28,7 +28,7 @@ import path from 'path'
 
 // ----------------------------- constants -------------------------------------
 const MAX_STEP = 4
-const SET_SIZE = 30
+const SET_SIZE = 50
 const SPEED_SIZE = 15            // V1.5: 15 questions (was 10). Old 10-question sessions keep their original scoring.
 const SPEED_SECONDS = 180        // 3 minutes
 const SPEED_GRACE = 10           // network grace window
@@ -250,61 +250,68 @@ function makeSub(grade, step) {
   const b = randInt(grade === 1 ? 0 : 1, a)
   return { operation: 'sub', operands: [a, b], display: `${a} - ${b}`, correctAnswer: a - b }
 }
-function makeMul(grade, step) {
+// `widen` (0 = normal) only ever grows number ranges; at widen 0 every range is exactly the original one.
+function makeMul(grade, step, widen = 0) {
   let t, o
-  if (grade === 1) { t = randInt(1, 5); o = randInt(1, 5) }
-  else if (grade === 2) { t = randInt(2, 10); o = randInt(2, 10) }
-  else if (grade === 3) { t = randInt(2, Math.min(10 + step, 12)); o = randInt(2, 10) }
-  else { const m = Math.min(12 + step * 2, 20); t = randInt(2, m); o = randInt(2, m) }
+  if (grade === 1) { const m = 5 + widen; t = randInt(1, m); o = randInt(1, m) }
+  else if (grade === 2) { const m = 10 + widen; t = randInt(2, m); o = randInt(2, m) }
+  else if (grade === 3) { t = randInt(2, Math.min(10 + step, 12) + widen); o = randInt(2, 10 + widen) }
+  else { const m = Math.min(12 + step * 2, 20) + widen; t = randInt(2, m); o = randInt(2, m) }
   return { operation: 'mul', operands: [t, o], display: `${t} \u00d7 ${o}`, correctAnswer: t * o }
 }
-function makeDiv(grade, step) {
+function makeDiv(grade, step, widen = 0) {
   let divisorMax, dividendMax
   if (grade === 2) { divisorMax = 10; dividendMax = 100 }
   else if (grade === 3) { divisorMax = Math.min(10 + step, 12); dividendMax = Math.min(100 + step * 20, 144) }
   else { divisorMax = Math.min(12 + step * 2, 20); dividendMax = Math.min(200 + step * 50, 500) }
+  divisorMax += widen; dividendMax += widen * 20
   const divisor = randInt(2, divisorMax)
   const qMax = Math.max(2, Math.floor(dividendMax / divisor))
   const quotient = randInt(2, qMax)
   const dividend = divisor * quotient
   return { operation: 'div', operands: [dividend, divisor], display: `${dividend} \u00f7 ${divisor}`, correctAnswer: quotient }
 }
-function makeFraction(grade, step) {
-  const denom = pick([2, 3, 4, 5])
+function makeFraction(grade, step, widen = 0) {
+  const denom = randInt(2, 5 + widen)
   const num = randInt(1, denom - 1)
-  const k = randInt(2, 10)
+  const k = randInt(2, 10 + widen * 2)
   const whole = denom * k
   return { operation: 'fraction', operands: [num, denom, whole], display: `${num}/${denom} of ${whole}`, correctAnswer: num * k }
 }
-function makeProblem(op, grade, step) {
-  if (op === 'add') return makeAdd(grade, step)
-  if (op === 'sub') return makeSub(grade, step)
-  if (op === 'mul') return makeMul(grade, step)
-  if (op === 'div') return makeDiv(grade, step)
-  return makeFraction(grade, step)
+// add/sub ranges grow with step, so widening nudges their step; mul/div/fraction get explicit wider caps.
+function makeProblem(op, grade, step, widen = 0) {
+  if (op === 'add') return makeAdd(grade, step + widen)
+  if (op === 'sub') return makeSub(grade, step + widen)
+  if (op === 'mul') return makeMul(grade, step + widen, widen)
+  if (op === 'div') return makeDiv(grade, step + widen, widen)
+  return makeFraction(grade, step, widen)
 }
 
-// Generate `count` unique problems, excluding any display strings in `exclude`.
-// If it cannot find enough unique problems, it gradually widens the numbers
-// (by nudging the effective step up) rather than failing or looping forever.
+// Generate `count` unique problems, excluding any display strings in `exclude` (everything already
+// used by this kid today). The operation mix always comes from the kid's real level (never changes
+// mid-day). When an operation runs out of fresh problems at the current ranges (common in grade 1
+// after several sets in one day), the number ranges widen step by step instead of stalling.
 function generateProblems(grade, step, count, exclude) {
   const problems = []
   const seen = new Set(exclude || [])
-  let guard = 0
+  const ops = opsFor(grade, step)
   let widen = 0
-  while (problems.length < count && guard < 12000) {
+  let misses = 0
+  let guard = 0
+  while (problems.length < count && guard < 60000) {
     guard++
-    const effStep = step + widen
-    const ops = opsFor(grade, effStep)
     const op = ops[problems.length % ops.length]
-    const p = makeProblem(op, grade, effStep)
+    const p = makeProblem(op, grade, step, widen)
     if (seen.has(p.display)) {
-      if (guard % 2000 === 0) {
+      misses++
+      if (misses >= 200) {
+        misses = 0
         widen += 1
         console.warn(`[MathCompete] generation widening (grade=${grade}, baseStep=${step}, widen=${widen})`)
       }
       continue
     }
+    misses = 0
     seen.add(p.display)
     problems.push({ id: uuidv4(), ...p, attempts: 0, firstTryCorrect: false, solved: false })
   }
@@ -796,7 +803,7 @@ async function route(req, method) {
     const prob = set.problems[idx]
     const solvedCount = () => set.problems.filter((p) => p.solved).length
 
-    if (prob.solved) return json({ correct: true, alreadySolved: true, solvedCount: solvedCount(), total: SET_SIZE })
+    if (prob.solved) return json({ correct: true, alreadySolved: true, solvedCount: solvedCount(), total: set.problems.length })
 
     const answer = Number(body.answer)
     if (!Number.isFinite(answer)) return json({ error: 'Answer must be a number.' }, 400)
@@ -810,7 +817,7 @@ async function route(req, method) {
       correct,
       encouragement: correct ? pick(ENCOURAGEMENTS) : null,
       message: correct ? null : 'Almost! Try again',
-      solvedCount: solvedCount(), total: SET_SIZE, setComplete: false,
+      solvedCount: solvedCount(), total: set.problems.length, setComplete: false,
     }
 
     if (allSolved) {
